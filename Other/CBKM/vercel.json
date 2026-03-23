@@ -1,7 +1,14 @@
 {
   "version": 2,
-  "buildCommand": "cd cbkm-website && CI=false npm run build",
-  "outputDirectory": "cbkm-website/build",
+  "builds": [
+    {
+      "src": "cbkm-website/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
+    }
+  ],
   "routes": [
     {
       "src": "/static/(.*)",
