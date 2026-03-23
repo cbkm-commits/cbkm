@@ -14,7 +14,7 @@ import AdminPortal from './pages/Admin/AdminPortal';
 function App() {
   return (
     <SponsorshipProvider>
-      <Router>
+      <Router basename="/">
         <Routes>
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/" element={<Layout><Home /></Layout>} />
