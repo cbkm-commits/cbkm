@@ -6,6 +6,7 @@ export interface Event {
   poster: string;
   date: string;
   location: string;
+  guidelinesUrl?: string;
   attendeeForm?: FormField[];
   participantForm?: FormField[];
 }
@@ -38,6 +39,8 @@ export interface Registration {
   numberOfParticipants?: number;
   category?: string;
   performanceDetails?: string;
+  // Dynamic custom fields from the event's form builder
+  customFields?: Record<string, string>;
 }
 
 export interface Sponsor {
