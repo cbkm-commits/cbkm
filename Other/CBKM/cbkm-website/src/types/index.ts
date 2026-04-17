@@ -41,6 +41,7 @@ export interface Registration {
   performanceDetails?: string;
   // Dynamic custom fields from the event's form builder
   customFields?: Record<string, string>;
+  deletedAt?: string | null;
 }
 
 export interface Sponsor {

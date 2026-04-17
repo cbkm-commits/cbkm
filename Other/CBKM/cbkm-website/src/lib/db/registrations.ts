@@ -10,16 +10,17 @@ const toReg = (r: any): Registration => ({
   numberOfParticipants: r.number_of_participants, category: r.category,
   performanceDetails: r.performance_details, specialRequirements: r.special_requirements,
   customFields: r.custom_fields || {},
+  deletedAt: r.deleted_at ?? null,
 });
 
 export const fetchRegistrations = async (): Promise<Registration[]> => {
-  const { data, error } = await supabase.from('registrations').select('*').order('registration_date', { ascending: false });
+  const { data, error } = await supabase.from('registrations').select('*').is('deleted_at', null).order('registration_date', { ascending: false });
   if (error) throw error;
   return (data || []).map(toReg);
 };
 
 export const deleteRegistration = async (id: string): Promise<void> => {
-  const { error } = await supabase.from('registrations').delete().eq('id', id);
+  const { error } = await supabase.from('registrations').update({ deleted_at: new Date().toISOString() }).eq('id', id);
   if (error) throw error;
 };
 
