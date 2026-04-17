@@ -1,17 +1,84 @@
 import React, { useState } from 'react';
 import { Calendar, MapPin, Clock, Users, UserPlus } from 'lucide-react';
 import { mockEvents } from '../data/mockData';
+import { SmtpSettings } from '../types';
 
 const Events: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const [registrationType, setRegistrationType] = useState<'attendee' | 'participant'>('attendee');
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [submitMessage, setSubmitMessage] = useState('');
 
   const selectedEventData = mockEvents.find(event => event.id === selectedEvent);
 
-  const handleRegistration = (e: React.FormEvent) => {
+  const getSmtpSettings = (): SmtpSettings | null => {
+    try {
+      const saved = localStorage.getItem('cbkm_smtp_settings');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  };
+
+  const handleFieldChange = (name: string, value: string) => {
+    setFormValues(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle registration logic here
-    alert('Registration submitted successfully!');
+    if (!selectedEventData) return;
+
+    setSubmitting(true);
+    setSubmitStatus('idle');
+
+    const smtp = getSmtpSettings();
+    const toEmail = formValues['email'] || formValues['Email'] || '';
+
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // SMTP config from admin settings
+          smtpHost: smtp?.smtpHost || '',
+          smtpPort: smtp?.smtpPort || '587',
+          smtpUsername: smtp?.smtpUsername || '',
+          smtpPassword: smtp?.smtpPassword || '',
+          fromEmail: smtp?.fromEmail || '',
+          fromName: smtp?.fromName || 'CBKM',
+          // Recipient
+          toEmail,
+          toName: formValues['fullName'] || formValues['name'] || toEmail,
+          // Event details
+          eventName: selectedEventData.name,
+          eventDate: new Date(selectedEventData.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+          eventLocation: selectedEventData.location,
+          registrationType,
+          formData: formValues
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSubmitStatus('success');
+        setSubmitMessage('Registration submitted! A confirmation email has been sent to ' + toEmail);
+        setFormValues({});
+        setTimeout(() => {
+          setSelectedEvent(null);
+          setSubmitStatus('idle');
+        }, 3000);
+      } else {
+        setSubmitStatus('error');
+        setSubmitMessage(result.error || 'Registration saved but confirmation email could not be sent.');
+      }
+    } catch (err) {
+      setSubmitStatus('error');
+      setSubmitMessage('Registration saved but confirmation email could not be sent. Please check your email settings.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -141,6 +208,8 @@ const Events: React.FC = () => {
                       <input
                         type="text"
                         required
+                        value={formValues['fullName'] || ''}
+                        onChange={(e) => handleFieldChange('fullName', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder="Enter your full name"
                       />
@@ -152,6 +221,8 @@ const Events: React.FC = () => {
                       <input
                         type="email"
                         required
+                        value={formValues['email'] || ''}
+                        onChange={(e) => handleFieldChange('email', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder="your.email@example.com"
                       />
@@ -166,6 +237,8 @@ const Events: React.FC = () => {
                       <input
                         type="tel"
                         required
+                        value={formValues['phone'] || ''}
+                        onChange={(e) => handleFieldChange('phone', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder="(403) 123-4567"
                       />
@@ -177,7 +250,8 @@ const Events: React.FC = () => {
                       <input
                         type="number"
                         min="1"
-                        defaultValue="1"
+                        value={formValues['numberOfAttendees'] || '1'}
+                        onChange={(e) => handleFieldChange('numberOfAttendees', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                       />
                     </div>
@@ -190,6 +264,8 @@ const Events: React.FC = () => {
                       </label>
                       <textarea
                         rows={3}
+                        value={formValues['performanceDetails'] || ''}
+                        onChange={(e) => handleFieldChange('performanceDetails', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder="Please describe your performance (song, dance, etc.)"
                       />
@@ -202,17 +278,31 @@ const Events: React.FC = () => {
                     </label>
                     <textarea
                       rows={2}
+                      value={formValues['specialRequirements'] || ''}
+                      onChange={(e) => handleFieldChange('specialRequirements', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                       placeholder="Any special accommodations or dietary needs"
                     />
                   </div>
 
+                  {submitStatus === 'success' && (
+                    <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-green-800 text-sm">
+                      {submitMessage}
+                    </div>
+                  )}
+                  {submitStatus === 'error' && (
+                    <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-yellow-800 text-sm">
+                      {submitMessage}
+                    </div>
+                  )}
+
                   <div className="flex space-x-4 pt-4">
                     <button
                       type="submit"
-                      className="flex-1 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold"
+                      disabled={submitting}
+                      className="flex-1 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold disabled:opacity-60"
                     >
-                      Submit Registration
+                      {submitting ? 'Submitting...' : 'Submit Registration'}
                     </button>
                     <button
                       type="button"

@@ -90,6 +90,15 @@ export interface SiteSettings {
   contactPhone: string;
 }
 
+export interface SmtpSettings {
+  smtpHost: string;
+  smtpPort: string;
+  smtpUsername: string;
+  smtpPassword: string;
+  fromEmail: string;
+  fromName: string;
+}
+
 export interface Blog {
   id: string;
   title: string;

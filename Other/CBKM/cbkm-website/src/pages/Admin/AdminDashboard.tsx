@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Calendar, 
-  Users, 
-  Image, 
-  HandHeart, 
-  Phone, 
+import {
+  Calendar,
+  Users,
+  Image,
+  HandHeart,
+  Phone,
   Settings,
-  LogOut, 
+  LogOut,
   Plus,
   Edit,
   Trash2,
@@ -19,10 +19,11 @@ import {
   UserPlus,
   Filter,
   Upload,
-  FileText
+  FileText,
+  Mail
 } from 'lucide-react';
 import { mockEvents, mockSponsors, mockGallery, mockContacts, mockRegistrations, mockSponsorshipPackages, mockBlogs } from '../../data/mockData';
-import { Event, FormField, Registration, SponsorshipPackage, Blog, SiteSettings } from '../../types';
+import { Event, FormField, Registration, SponsorshipPackage, Blog, SiteSettings, SmtpSettings } from '../../types';
 import { useSponsorship } from '../../context/SponsorshipContext';
 
 const AdminDashboard: React.FC = () => {
@@ -36,6 +37,28 @@ const AdminDashboard: React.FC = () => {
     contactEmail: sponsorshipContact.email,
     contactPhone: sponsorshipContact.phone
   });
+
+  const loadSmtpSettings = (): SmtpSettings => {
+    try {
+      const saved = localStorage.getItem('cbkm_smtp_settings');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { smtpHost: 'smtp.gmail.com', smtpPort: '587', smtpUsername: '', smtpPassword: '', fromEmail: '', fromName: 'CBKM' };
+  };
+
+  const [smtpSettings, setSmtpSettings] = useState<SmtpSettings>(loadSmtpSettings);
+  const [smtpSaveStatus, setSmtpSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  const handleSaveSmtp = () => {
+    setSmtpSaveStatus('saving');
+    try {
+      localStorage.setItem('cbkm_smtp_settings', JSON.stringify(smtpSettings));
+      setSmtpSaveStatus('saved');
+      setTimeout(() => setSmtpSaveStatus('idle'), 2000);
+    } catch {
+      setSmtpSaveStatus('error');
+    }
+  };
 
   // Filter states
   const [attendeeFilters, setAttendeeFilters] = useState({
@@ -636,7 +659,7 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
         
-        <button 
+        <button
           onClick={() => {
             alert('Settings saved successfully!');
           }}
@@ -644,6 +667,87 @@ const AdminDashboard: React.FC = () => {
         >
           <Save className="w-4 h-4 mr-2" />
           Save Settings
+        </button>
+      </div>
+
+      {/* Email Configuration */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex items-center mb-1">
+          <Mail className="w-5 h-5 text-primary-600 mr-2" />
+          <h3 className="text-lg font-semibold text-gray-900">Email Configuration</h3>
+        </div>
+        <p className="text-sm text-gray-500 mb-5">SMTP server used to send registration confirmation emails.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+            <input
+              type="text"
+              value={smtpSettings.smtpHost}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpHost: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="smtp.gmail.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
+            <input
+              type="text"
+              value={smtpSettings.smtpPort}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPort: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="587"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
+            <input
+              type="text"
+              value={smtpSettings.smtpUsername}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpUsername: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="you@gmail.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
+            <input
+              type="password"
+              value={smtpSettings.smtpPassword}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, smtpPassword: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="App password"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
+            <input
+              type="email"
+              value={smtpSettings.fromEmail}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, fromEmail: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="noreply@cbkm.ca"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Name</label>
+            <input
+              type="text"
+              value={smtpSettings.fromName}
+              onChange={(e) => setSmtpSettings({ ...smtpSettings, fromName: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="CBKM"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={handleSaveSmtp}
+          disabled={smtpSaveStatus === 'saving'}
+          className="mt-5 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center disabled:opacity-60"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {smtpSaveStatus === 'saving' ? 'Saving...' : smtpSaveStatus === 'saved' ? 'Saved!' : smtpSaveStatus === 'error' ? 'Error saving' : 'Save Email Config'}
         </button>
       </div>
     </div>
