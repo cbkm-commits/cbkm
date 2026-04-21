@@ -17,6 +17,7 @@ import { fetchRegistrations, deleteRegistration, updateRegistration } from '../.
 import { getSettings, setSetting } from '../../lib/db/settings';
 import { fetchBlogs, createBlog, updateBlog, deleteBlog } from '../../lib/db/blogs';
 import { uploadImage, uploadFile } from '../../lib/storage';
+import { formatEventDate } from '../../lib/dateUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EmailConfig { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string; fromEmail: string; fromName: string; }
@@ -264,7 +265,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-1">{event.name}</h3>
-                <p className="text-sm text-gray-500 mb-1">{new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-sm text-gray-500 mb-1">{formatEventDate(event.date)}</p>
                 <p className="text-gray-600 text-sm mb-4 line-clamp-4">{event.description}</p>
                 <div className="flex space-x-2">
                   <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }}

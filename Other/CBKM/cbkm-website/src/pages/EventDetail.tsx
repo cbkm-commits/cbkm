@@ -4,10 +4,11 @@ import { Calendar, MapPin, Users, UserPlus, ArrowLeft, X, FileText, Download } f
 import { useEvents } from '../context/EventsContext';
 import { createRegistration } from '../lib/db/registrations';
 import { Event } from '../types';
+import { formatEventDate, eventDateYear } from '../lib/dateUtils';
 
 export const toSlug = (event: Event) =>
   event.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') +
-  '-' + new Date(event.date).getFullYear();
+  '-' + eventDateYear(event.date);
 
 const EventDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -139,7 +140,7 @@ const EventDetail: React.FC = () => {
           <div className="flex flex-wrap gap-4 text-white/80 text-sm">
             <span className="flex items-center">
               <Calendar className="w-4 h-4 mr-1.5" />
-              {new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              {formatEventDate(event.date)}
             </span>
             {event.location && (
               <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" />{event.location}</span>
