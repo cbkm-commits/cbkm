@@ -14,7 +14,7 @@ const Header: React.FC = () => {
     { name: 'Blog', href: '/blog', icon: FileText },
     { name: 'Contact', href: '/contact', icon: Phone },
     { name: 'About Us', href: '/about', icon: Info },
-    { name: 'Vote', href: '/#/vote', icon: Vote },
+    { name: 'Vote', href: '/vote', icon: Vote },
   ];
 
   const isActiveLink = (href: string) => location.pathname === href;
