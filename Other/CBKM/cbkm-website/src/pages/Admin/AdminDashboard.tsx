@@ -20,12 +20,13 @@ import {
   Filter,
   Upload,
   FileText,
-  Mail
+  Mail,
+  Vote
 } from 'lucide-react';
 import { mockEvents, mockSponsors, mockGallery, mockContacts, mockRegistrations, mockSponsorshipPackages, mockBlogs } from '../../data/mockData';
 import { Event, FormField, Registration, SponsorshipPackage, Blog, SiteSettings, SmtpSettings } from '../../types';
 import { useSponsorship } from '../../context/SponsorshipContext';
-
+import { VotingControl } from '../../components/VotingControl';
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { sponsorshipContact, updateSponsorshipContact } = useSponsorship();
@@ -87,6 +88,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'contacts', name: 'Contacts', icon: Phone },
     { id: 'blog', name: 'Blog', icon: FileText },
     { id: 'settings', name: 'Settings', icon: Settings },
+    { id: 'voting', name: 'Voting', icon: Vote },
   ];
 
   const renderEventsTab = () => (
@@ -1154,6 +1156,7 @@ const AdminDashboard: React.FC = () => {
         {activeTab === 'contacts' && renderContactsTab()}
         {activeTab === 'blog' && renderBlogTab()}
         {activeTab === 'settings' && renderSettingsTab()}
+        {activeTab === 'voting' && <VotingControl />}
       </main>
 
       {/* Event Modal */}
