@@ -14,7 +14,7 @@ import VotePage from './Voting';
 function App() {
   return (
     <SponsorshipProvider>
-      <Router basename="/">
+      <Router>
         <Routes>
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/" element={<Layout><Home /></Layout>} />
