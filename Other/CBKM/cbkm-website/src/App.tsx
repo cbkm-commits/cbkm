@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { SponsorshipProvider } from './context/SponsorshipContext';
 import Layout from './components/Layout/Layout';
 import Home from './pages/Home';
@@ -14,7 +14,7 @@ import VotePage from './Voting';
 function App() {
   return (
     <SponsorshipProvider>
-      <Router>
+      <Router basename="/">
         <Routes>
           <Route path="/admin" element={<AdminPortal />} />
           <Route path="/" element={<Layout><Home /></Layout>} />
