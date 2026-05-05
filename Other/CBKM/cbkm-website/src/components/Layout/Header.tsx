@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Calendar, Users, HandHeart, Image, Phone, Info, Home, FileText } from 'lucide-react';
+import { Menu, X, Calendar, Users, HandHeart, Image, Phone, Info, Home, FileText, Vote } from 'lucide-react';
 
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -14,6 +14,7 @@ const Header: React.FC = () => {
     { name: 'Blog', href: '/blog', icon: FileText },
     { name: 'Contact', href: '/contact', icon: Phone },
     { name: 'About Us', href: '/about', icon: Info },
+    { name: 'Vote', href: '/vote', icon: Vote },
   ];
 
   const isActiveLink = (href: string) => location.pathname === href;
