@@ -10,7 +10,7 @@ import Contact from './pages/Contact';
 import About from './pages/About';
 import Blog from './pages/Blog';
 import AdminPortal from './pages/Admin/AdminPortal';
-
+import VotePage from './Voting';
 function App() {
   return (
     <SponsorshipProvider>
@@ -24,6 +24,7 @@ function App() {
           <Route path="/blog" element={<Layout><Blog /></Layout>} />
           <Route path="/contact" element={<Layout><Contact /></Layout>} />
           <Route path="/about" element={<Layout><About /></Layout>} />
+          <Route path="/vote" element={<VotePage />} />
         </Routes>
       </Router>
     </SponsorshipProvider>
