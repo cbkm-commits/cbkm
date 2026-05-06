@@ -20,8 +20,9 @@ import {
   Filter,
   Upload,
   FileText,
-  Mail,
-  Vote
+  Vote,
+  Mail
+  
 } from 'lucide-react';
 import { mockEvents, mockSponsors, mockGallery, mockContacts, mockRegistrations, mockSponsorshipPackages, mockBlogs } from '../../data/mockData';
 import { Event, FormField, Registration, SponsorshipPackage, Blog, SiteSettings, SmtpSettings } from '../../types';
