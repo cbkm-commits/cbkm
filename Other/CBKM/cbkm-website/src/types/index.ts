@@ -9,6 +9,15 @@ export interface Event {
   guidelinesUrl?: string;
   attendeeForm?: FormField[];
   participantForm?: FormField[];
+  hidden?: boolean;
+  attendeeFormPaused?: boolean;
+  participantFormPaused?: boolean;
+  votingEnabled?: boolean;
+  votingType?: 'choice' | 'stars' | 'score';
+  votingCode?: string;
+  resultsPublic?: boolean;
+  adultTicketPrice?: number;
+  kidsAbove6TicketPrice?: number;
 }
 
 export interface FormField {
@@ -42,6 +51,18 @@ export interface Registration {
   // Dynamic custom fields from the event's form builder
   customFields?: Record<string, string>;
   deletedAt?: string | null;
+  performanceFinalized?: boolean;
+  participantNumber?: string;
+  votingEnabled?: boolean;
+}
+
+export interface Vote {
+  id: string;
+  eventId: string;
+  registrationId: string;
+  voterToken: string;
+  voteValue: string;
+  createdAt: string;
 }
 
 export interface Sponsor {

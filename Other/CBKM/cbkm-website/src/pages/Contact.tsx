@@ -1,231 +1,131 @@
 import React, { useState } from 'react';
-import { Mail, Phone, MapPin, Send, Download, MessageSquare } from 'lucide-react';
-import { mockContacts } from '../data/mockData';
+import { Send, Users, Heart, HandHeart } from 'lucide-react';
+import { createContact } from '../lib/db/contacts';
 
 const Contact: React.FC = () => {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    message: ''
-  });
+  const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
-    alert('Thank you for your message! We will get back to you soon.');
-    setFormData({ name: '', email: '', phone: '', message: '' });
-  };
-
-  const exportToXLSX = () => {
-    // Export functionality would be implemented here
-    alert('Exporting contacts to XLSX file...');
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await createContact({ name: formData.name, email: formData.email, phone: '', message: formData.subject ? `[${formData.subject}] ${formData.message}` : formData.message });
+      setSubmitted(true);
+      setFormData({ name: '', email: '', subject: '', message: '' });
+    } catch {
+      setSubmitError('Failed to send message. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Contact Us
+    <div>
+      {/* Hero */}
+      <section className="py-24 animate-fade-in" style={{ background: 'linear-gradient(160deg, #111, #1a1a1a)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <span className="section-label">Reach Out</span>
+          <h1 className="mt-4 text-white font-bold font-serif" style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', letterSpacing: '-0.01em' }}>
+            Get In <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Touch</em>
           </h1>
-          <p className="text-xl text-gray-600">
-            Get in touch with Calgary Bharathi Kalai Mandram
+          <div className="divider center" style={{ marginTop: '1.5rem' }} />
+          <p className="text-lg leading-[1.8]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            We'd love to hear from you — reach out with questions, ideas, or just to say hello
           </p>
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          {/* Contact Form */}
-          <div>
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Send us a Message</h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="Enter your full name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Address *
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="your.email@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="(403) 123-4567"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Message *
-                  </label>
-                  <textarea
-                    name="message"
-                    value={formData.message}
-                    onChange={handleInputChange}
-                    required
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="How can we help you?"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold flex items-center justify-center"
-                >
-                  <Send className="w-5 h-5 mr-2" />
-                  Send Message
-                </button>
-              </form>
-            </div>
-
-            {/* Contact Information */}
-            <div className="bg-white rounded-lg shadow-lg p-8 mt-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Contact Information</h2>
-              <div className="space-y-4">
-                <div className="flex items-start space-x-3">
-                  <Mail className="w-5 h-5 text-primary-600 mt-1" />
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Email</h3>
-                    <p className="text-gray-600">info@cbkm.ca</p>
-                    <p className="text-gray-600">sponsorship@cbkm.ca</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <Phone className="w-5 h-5 text-primary-600 mt-1" />
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Phone</h3>
-                    <p className="text-gray-600">+1 (403) 123-4567</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <MapPin className="w-5 h-5 text-primary-600 mt-1" />
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Address</h3>
-                    <p className="text-gray-600">Calgary, Alberta</p>
-                    <p className="text-gray-600">Canada</p>
-                  </div>
-                </div>
+      {/* Form */}
+      <section className="py-24" style={{ background: 'var(--surface-alt)' }}>
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl p-8" style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
+            <h2 className="text-2xl font-bold font-serif mb-6" style={{ color: 'var(--text)', letterSpacing: '-0.01em' }}>
+              Send us a <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Message</em>
+            </h2>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Full Name *</label>
+                <input type="text" name="name" value={formData.name} onChange={handleInputChange} required
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm transition-colors"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                  placeholder="Enter your full name" />
               </div>
-            </div>
-          </div>
-
-          {/* Contact Submissions */}
-          <div>
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Recent Contact Submissions</h2>
-                <button
-                  onClick={exportToXLSX}
-                  className="flex items-center text-primary-600 hover:text-primary-700 font-semibold"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Export XLSX
-                </button>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Email Address *</label>
+                <input type="email" name="email" value={formData.email} onChange={handleInputChange} required
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm transition-colors"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                  placeholder="your.email@example.com" />
               </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-900">Name</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-900">Email</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-900">Phone</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-900">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockContacts.map((contact) => (
-                      <tr key={contact.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-gray-900">{contact.name}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-gray-600">{contact.email}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-gray-600">{contact.phone || 'N/A'}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-gray-600">
-                            {new Date(contact.contactDate).toLocaleDateString()}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Subject</label>
+                <input type="text" name="subject" value={formData.subject} onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm transition-colors"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                  placeholder="What is this regarding?" />
               </div>
-
-              {/* Messages Preview */}
-              <div className="mt-8">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Messages</h3>
-                <div className="space-y-4">
-                  {mockContacts.slice(0, 3).map((contact) => (
-                    <div key={contact.id} className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-gray-900">{contact.name}</h4>
-                        <span className="text-sm text-gray-500">
-                          {new Date(contact.contactDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-gray-600 text-sm">{contact.message}</p>
-                      <div className="flex space-x-4 mt-3 text-sm">
-                        <a href={`mailto:${contact.email}`} className="text-primary-600 hover:text-primary-700">
-                          Reply
-                        </a>
-                        {contact.phone && (
-                          <a href={`tel:${contact.phone}`} className="text-primary-600 hover:text-primary-700">
-                            Call
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Message *</label>
+                <textarea name="message" value={formData.message} onChange={handleInputChange} required rows={5}
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm transition-colors resize-none"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                  placeholder="How can we help you?" />
+              </div>
+              {submitError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{submitError}</div>
+              )}
+              {submitted && (
+                <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', color: '#16a34a' }}>
+                  Thank you for your message! We will get back to you soon.
                 </div>
-              </div>
-            </div>
+              )}
+              <button type="submit" disabled={submitting}
+                className="btn btn-primary w-full flex items-center justify-center disabled:opacity-60">
+                <Send className="w-4 h-4 mr-2" />
+                {submitting ? 'Sending...' : 'Send Message'}
+              </button>
+            </form>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* CTA Cards */}
+      <section className="py-24" style={{ background: 'var(--surface)' }}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <span className="section-label">Get Involved</span>
+            <h2 className="mt-3 font-bold font-serif" style={{ fontSize: 'clamp(1.8rem, 3vw, 2.5rem)', letterSpacing: '-0.01em', color: 'var(--text)' }}>
+              Ways to <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Connect</em>
+            </h2>
+            <div className="divider center" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              { icon: <Users className="w-6 h-6" />, title: 'Become a Member', desc: 'Join our vibrant Tamil community in Calgary.' },
+              { icon: <Heart className="w-6 h-6" />, title: 'Volunteer', desc: 'Help organize events and community programs.' },
+              { icon: <HandHeart className="w-6 h-6" />, title: 'Donate', desc: 'Support cultural preservation and community service.' },
+            ].map((c) => (
+              <div key={c.title} className="text-center rounded-2xl p-6 card-hover"
+                style={{ background: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4"
+                  style={{ background: 'rgba(201,168,76,0.12)', color: '#C9A84C' }}>
+                  {c.icon}
+                </div>
+                <h3 className="font-semibold mb-2" style={{ color: 'var(--text)' }}>{c.title}</h3>
+                <p className="text-sm leading-[1.8]" style={{ color: 'var(--text-muted)' }}>{c.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

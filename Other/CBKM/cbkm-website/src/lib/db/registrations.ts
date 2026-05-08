@@ -11,10 +11,26 @@ const toReg = (r: any): Registration => ({
   performanceDetails: r.performance_details, specialRequirements: r.special_requirements,
   customFields: r.custom_fields || {},
   deletedAt: r.deleted_at ?? null,
+  performanceFinalized: r.performance_finalized ?? false,
+  participantNumber: r.participant_number ?? '',
+  votingEnabled: r.voting_enabled ?? false,
 });
 
 export const fetchRegistrations = async (): Promise<Registration[]> => {
   const { data, error } = await supabase.from('registrations').select('*').is('deleted_at', null).order('registration_date', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(toReg);
+};
+
+export const fetchVotingParticipants = async (eventId: string): Promise<Registration[]> => {
+  const { data, error } = await supabase
+    .from('registrations')
+    .select('*')
+    .eq('event_id', eventId)
+    .eq('type', 'participant')
+    .eq('voting_enabled', true)
+    .eq('performance_finalized', true)
+    .is('deleted_at', null);
   if (error) throw error;
   return (data || []).map(toReg);
 };
@@ -25,14 +41,25 @@ export const deleteRegistration = async (id: string): Promise<void> => {
 };
 
 export const updateRegistration = async (id: string, updates: Partial<Registration>): Promise<Registration> => {
-  const { data, error } = await supabase.from('registrations').update({
-    name: updates.name, email: updates.email, phone: updates.phone, address: updates.address,
-    number_of_tickets: updates.numberOfTickets, adults: updates.adults,
-    kids_above_6: updates.kidsAbove6, kids_below_6: updates.kidsBelow6,
-    number_of_participants: updates.numberOfParticipants, category: updates.category,
-    performance_details: updates.performanceDetails, special_requirements: updates.specialRequirements,
-    custom_fields: updates.customFields,
-  }).eq('id', id).select().single();
+  const patch: any = {};
+  if (updates.type !== undefined) patch.type = updates.type;
+  if (updates.name !== undefined) patch.name = updates.name;
+  if (updates.email !== undefined) patch.email = updates.email;
+  if (updates.phone !== undefined) patch.phone = updates.phone;
+  if (updates.address !== undefined) patch.address = updates.address;
+  if (updates.numberOfTickets !== undefined) patch.number_of_tickets = updates.numberOfTickets;
+  if (updates.adults !== undefined) patch.adults = updates.adults;
+  if (updates.kidsAbove6 !== undefined) patch.kids_above_6 = updates.kidsAbove6;
+  if (updates.kidsBelow6 !== undefined) patch.kids_below_6 = updates.kidsBelow6;
+  if (updates.numberOfParticipants !== undefined) patch.number_of_participants = updates.numberOfParticipants;
+  if (updates.category !== undefined) patch.category = updates.category;
+  if (updates.performanceDetails !== undefined) patch.performance_details = updates.performanceDetails;
+  if (updates.specialRequirements !== undefined) patch.special_requirements = updates.specialRequirements;
+  if (updates.customFields !== undefined) patch.custom_fields = updates.customFields;
+  if (updates.performanceFinalized !== undefined) patch.performance_finalized = updates.performanceFinalized;
+  if (updates.participantNumber !== undefined) patch.participant_number = updates.participantNumber;
+  if (updates.votingEnabled !== undefined) patch.voting_enabled = updates.votingEnabled;
+  const { data, error } = await supabase.from('registrations').update(patch).eq('id', id).select().single();
   if (error) throw error;
   return toReg(data);
 };

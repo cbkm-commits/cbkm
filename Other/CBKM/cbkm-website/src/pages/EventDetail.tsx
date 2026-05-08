@@ -14,13 +14,14 @@ const EventDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { events } = useEvents();
-  const event = events.find(e => toSlug(e) === slug);
+  const event = events.find(e => toSlug(e) === slug && !e.hidden);
 
   const [registrationType, setRegistrationType] = useState<'attendee' | 'participant'>('attendee');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [regError, setRegError] = useState('');
   const [viewingPoster, setViewingPoster] = useState(false);
+  const [etransferSameAsEmail, setEtransferSameAsEmail] = useState<boolean | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   if (!event) {
@@ -37,9 +38,19 @@ const EventDetail: React.FC = () => {
     );
   }
 
+  const isEtransferField = (label: string) => /e[\s-]?transfer/i.test(label);
+
   const handleRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formRef.current) return;
+
+    // Validate e-transfer choice before submitting
+    const hasEtransferField = currentFields?.some(f => isEtransferField(f.label));
+    if (hasEtransferField && etransferSameAsEmail === null) {
+      setRegError('Please indicate if your e-transfer email is the same as your email address.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const fd = new FormData(formRef.current);
@@ -65,7 +76,8 @@ const EventDetail: React.FC = () => {
       const customFields: Record<string, string> = {};
       for (const field of (currentFields || [])) {
         if (!standardNames.has(field.name)) {
-          const val = g(field.name);
+          let val = g(field.name);
+          if (isEtransferField(field.label) && etransferSameAsEmail === true) val = email;
           if (val) customFields[field.name] = val;
         }
       }
@@ -108,9 +120,25 @@ const EventDetail: React.FC = () => {
           category: g('category'),
           performanceDetails: g('performanceDetails'),
           guidelinesUrl: event.guidelinesUrl || '',
+          adultTicketPrice: event.adultTicketPrice || 0,
+          kidsAbove6TicketPrice: event.kidsAbove6TicketPrice || 0,
         }),
       }).catch(() => {});
+      // Submit attendee data to Google Sheet — non-blocking
+      if (registrationType === 'attendee') {
+        const sheetFields = (event.attendeeForm || []).map(field => {
+          let value = g(field.name);
+          if (isEtransferField(field.label) && etransferSameAsEmail === true) value = email;
+          return { label: field.label, value };
+        });
+        fetch('/api/sheet-submission', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: sheetFields }),
+        }).catch(() => {});
+      }
       setSubmitted(true);
+      setEtransferSameAsEmail(null);
       formRef.current.reset();
     } catch {
       setRegError('Failed to submit registration. Please try again.');
@@ -189,7 +217,7 @@ const EventDetail: React.FC = () => {
                   {registrationType === 'attendee' ? 'Ticket Registration Submitted!' : 'Participant Registration Submitted!'}
                 </h3>
                 <p className="text-sm text-gray-500 mb-5">Thank you for registering. We'll be in touch soon.</p>
-                <button onClick={() => setSubmitted(false)}
+                <button onClick={() => { setSubmitted(false); setEtransferSameAsEmail(null); }}
                   className="text-primary-600 hover:underline text-sm font-medium">
                   Register another person
                 </button>
@@ -200,42 +228,89 @@ const EventDetail: React.FC = () => {
 
                 {/* Type selector */}
                 <div className="grid grid-cols-2 gap-2 mb-5">
-                  <button onClick={() => setRegistrationType('attendee')}
+                  <button onClick={() => { setRegistrationType('attendee'); setEtransferSameAsEmail(null); }}
                     className={`flex flex-col items-center p-3 rounded-xl border-2 text-sm font-medium transition-all ${registrationType === 'attendee' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                     <Users className="w-5 h-5 mb-1" />Tickets
                   </button>
-                  <button onClick={() => setRegistrationType('participant')}
+                  <button onClick={() => { setRegistrationType('participant'); setEtransferSameAsEmail(null); }}
                     className={`flex flex-col items-center p-3 rounded-xl border-2 text-sm font-medium transition-all ${registrationType === 'participant' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                     <UserPlus className="w-5 h-5 mb-1" />Register
                   </button>
                 </div>
 
+                {((registrationType === 'attendee' && event.attendeeFormPaused) ||
+                  (registrationType === 'participant' && event.participantFormPaused)) ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+                    <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+                      <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3C7.029 3 3 7.029 3 12s4.029 9 9 9 9-4.029 9-9-4.029-9-9-9z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-base font-semibold text-gray-800 mb-1">Registration Closed</h3>
+                    <p className="text-sm text-gray-500">
+                      {registrationType === 'attendee'
+                        ? 'Ticket registration for this event is currently closed.'
+                        : 'Participant registration for this event is currently closed.'}
+                    </p>
+                  </div>
+                ) : (
                 <form ref={formRef} onSubmit={handleRegistration} className="space-y-3 flex-1">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {currentFields?.map(field => (
-                      <div key={field.id} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          {field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}
-                        </label>
-                        {field.type === 'select' ? (
-                          <select name={field.name} required={field.required}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm">
-                            <option value="">Select…</option>
-                            {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                          </select>
-                        ) : field.type === 'textarea' ? (
-                          <textarea name={field.name} rows={2} required={field.required}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm resize-none"
-                            placeholder={field.label} />
-                        ) : (
-                          <input name={field.name} type={field.type === 'phone' ? 'tel' : field.type}
-                            required={field.required}
-                            min={field.type === 'number' ? '0' : undefined}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                            placeholder={field.label} />
-                        )}
-                      </div>
-                    ))}
+                    {currentFields?.map(field => {
+                      const isEtransfer = isEtransferField(field.label);
+                      return (
+                        <div key={field.id} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            {field.label}{field.required && !isEtransfer && <span className="text-red-500 ml-0.5">*</span>}
+                          </label>
+                          {isEtransfer ? (
+                            etransferSameAsEmail === null ? (
+                              <div className="flex items-center gap-2 flex-nowrap">
+                                <span className="text-sm text-gray-500 whitespace-nowrap">Same as your email?</span>
+                                <button type="button" onClick={() => setEtransferSameAsEmail(true)}
+                                  className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                  Yes
+                                </button>
+                                <button type="button" onClick={() => setEtransferSameAsEmail(false)}
+                                  className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                  No
+                                </button>
+                              </div>
+                            ) : etransferSameAsEmail ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-400 italic">Using your email address</span>
+                                <button type="button" onClick={() => setEtransferSameAsEmail(null)}
+                                  className="text-xs text-primary-600 hover:underline">Change</button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <input name={field.name} type="email" required={field.required}
+                                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                                  placeholder={field.label} />
+                                <button type="button" onClick={() => setEtransferSameAsEmail(null)}
+                                  className="text-xs text-primary-600 hover:underline whitespace-nowrap">Change</button>
+                              </div>
+                            )
+                          ) : field.type === 'select' ? (
+                            <select name={field.name} required={field.required}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm">
+                              <option value="">Select…</option>
+                              {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                          ) : field.type === 'textarea' ? (
+                            <textarea name={field.name} rows={2} required={field.required}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm resize-none"
+                              placeholder={field.label} />
+                          ) : (
+                            <input name={field.name} type={field.type === 'phone' ? 'tel' : field.type}
+                              required={field.required}
+                              min={field.type === 'number' ? '0' : undefined}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                              placeholder={field.label} />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                   {regError && (
                     <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm sm:col-span-2">{regError}</div>
@@ -245,6 +320,7 @@ const EventDetail: React.FC = () => {
                     {submitting ? 'Submitting…' : 'Submit Registration'}
                   </button>
                 </form>
+                )}
               </>
             )}
           </div>

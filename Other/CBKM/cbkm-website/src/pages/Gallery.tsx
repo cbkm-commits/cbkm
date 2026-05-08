@@ -1,178 +1,134 @@
-import React, { useState } from 'react';
-import { Image as ImageIcon, Plus, X, Calendar, Download } from 'lucide-react';
-import { mockGallery } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { Image as ImageIcon, X, Calendar, Download } from 'lucide-react';
+import { fetchGallery } from '../lib/db/gallery';
+import { GalleryImage } from '../types';
+
+const categories = ['All', 'Festival', 'Performance', 'Workshop', 'Art', 'Community'];
 
 const Gallery: React.FC = () => {
+  const [images, setImages] = useState<GalleryImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('All');
 
-  const selectedImageData = mockGallery.find(img => img.id === selectedImage);
+  useEffect(() => {
+    fetchGallery().then(data => setImages(data as GalleryImage[])).catch(() => {});
+  }, []);
+
+  const selectedImageData = images.find(img => img.id === selectedImage);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Gallery
+    <div>
+      {/* Hero */}
+      <section className="py-24 animate-fade-in" style={{ background: 'linear-gradient(160deg, #111, #1a1a1a)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <span className="section-label">Memories</span>
+          <h1 className="mt-4 text-white font-bold font-serif" style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', letterSpacing: '-0.01em' }}>
+            Photo <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Gallery</em>
           </h1>
-          <p className="text-xl text-gray-600 mb-8">
+          <div className="divider center" style={{ marginTop: '1.5rem' }} />
+          <p className="text-lg leading-[1.8]" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Memories from our cultural events and community celebrations
           </p>
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="bg-primary-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors flex items-center mx-auto"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Upload Photos
-          </button>
         </div>
+      </section>
 
-        {/* Gallery Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {mockGallery.map((image) => (
-            <div
-              key={image.id}
-              className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={() => setSelectedImage(image.id)}
-            >
-              <div className="aspect-w-16 aspect-h-12 bg-gray-200">
-                <div className="w-full h-48 bg-gray-300 flex items-center justify-center">
-                  <ImageIcon className="w-12 h-12 text-gray-400" />
-                </div>
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-1">{image.title}</h3>
-                <p className="text-sm text-gray-600 mb-2">{image.description}</p>
-                <div className="flex items-center text-xs text-gray-500">
-                  <Calendar className="w-3 h-3 mr-1" />
-                  {new Date(image.uploadDate).toLocaleDateString()}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Image Modal */}
-        {selectedImage && selectedImageData && (
-          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-semibold text-gray-900">{selectedImageData.title}</h2>
-                  <button
-                    onClick={() => setSelectedImage(null)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-4">
-                <div className="w-full h-96 bg-gray-300 rounded-lg flex items-center justify-center mb-4">
-                  <ImageIcon className="w-16 h-16 text-gray-400" />
-                </div>
-                <p className="text-gray-600 mb-4">{selectedImageData.description}</p>
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-500">
-                    Uploaded on {new Date(selectedImageData.uploadDate).toLocaleDateString()}
-                  </div>
-                  <button className="flex items-center text-primary-600 hover:text-primary-700 font-semibold">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </button>
-                </div>
-              </div>
-            </div>
+      {/* Filter tabs */}
+      <section style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex gap-2 overflow-x-auto py-4">
+            {categories.map(cat => (
+              <button key={cat} onClick={() => setActiveCategory(cat)}
+                className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors"
+                style={{
+                  background: activeCategory === cat ? '#C9A84C' : 'var(--surface-alt)',
+                  color: activeCategory === cat ? '#1a1a1a' : 'var(--text-muted)',
+                  border: `1px solid ${activeCategory === cat ? '#C9A84C' : 'var(--border)'}`,
+                }}>
+                {cat}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
+      </section>
 
-        {/* Upload Modal */}
-        {showUploadModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">Upload Photos</h2>
-                  <button
-                    onClick={() => setShowUploadModal(false)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-
-                <form className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Images
-                    </label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors cursor-pointer">
-                      <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600 mb-2">Click to upload images</p>
-                      <p className="text-sm text-gray-500">PNG, JPG, GIF up to 10MB each</p>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        className="hidden"
-                      />
+      {/* Gallery Grid */}
+      <section className="py-24" style={{ background: 'var(--surface-alt)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {images.map((image) => (
+              <div key={image.id}
+                className="rounded-2xl overflow-hidden cursor-pointer card-hover"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                onClick={() => setSelectedImage(image.id)}>
+                <div className="w-full h-48 overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(201,168,76,0.15), rgba(139,26,26,0.1))' }}>
+                  {image.url ? (
+                    <img src={image.url} alt={image.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <ImageIcon className="w-12 h-12" style={{ color: 'rgba(201,168,76,0.25)' }} />
                     </div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <h3 className="font-semibold mb-1" style={{ color: 'var(--text)' }}>{image.title}</h3>
+                  <p className="text-sm mb-2 leading-[1.8]" style={{ color: 'var(--text-muted)' }}>{image.description}</p>
+                  <div className="flex items-center text-xs" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+                    <Calendar className="w-3 h-3 mr-1" />
+                    {new Date(image.uploadDate).toLocaleDateString()}
                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Album Title
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      placeholder="Enter album title"
-                    />
-                  </div>
+          {images.length === 0 && (
+            <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>
+              <ImageIcon className="w-16 h-16 mx-auto mb-4" style={{ color: 'rgba(201,168,76,0.25)' }} />
+              <p>No photos yet. Check back soon!</p>
+            </div>
+          )}
+        </div>
+      </section>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description
-                    </label>
-                    <textarea
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      placeholder="Describe the event or occasion"
-                    />
+      {/* Image Modal */}
+      {selectedImage && selectedImageData && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedImage(null)}>
+          <div className="rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="p-5 flex justify-between items-center" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="text-xl font-semibold font-serif" style={{ color: 'var(--text)', letterSpacing: '-0.01em' }}>
+                {selectedImageData.title}
+              </h2>
+              <button onClick={() => setSelectedImage(null)} style={{ color: 'var(--text-muted)' }}
+                className="hover:opacity-70 transition-opacity">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="w-full h-96 rounded-xl overflow-hidden mb-4" style={{ background: 'var(--surface-alt)' }}>
+                {selectedImageData.url ? (
+                  <img src={selectedImageData.url} alt={selectedImageData.title} className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ImageIcon className="w-16 h-16" style={{ color: 'rgba(201,168,76,0.25)' }} />
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Event Date
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    />
-                  </div>
-
-                  <div className="flex space-x-4 pt-4">
-                    <button
-                      type="submit"
-                      className="flex-1 bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-semibold"
-                    >
-                      Upload Photos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowUploadModal(false)}
-                      className="flex-1 border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors font-semibold"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+                )}
+              </div>
+              <p className="mb-4 leading-[1.8]" style={{ color: 'var(--text-muted)' }}>{selectedImageData.description}</p>
+              <div className="flex items-center justify-between">
+                <div className="text-sm" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+                  Uploaded on {new Date(selectedImageData.uploadDate).toLocaleDateString()}
+                </div>
+                <button className="flex items-center font-semibold text-sm transition-opacity hover:opacity-70" style={{ color: '#C9A84C' }}>
+                  <Download className="w-4 h-4 mr-2" />Download
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

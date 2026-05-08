@@ -1,74 +1,88 @@
 import React from 'react';
-import { Facebook, Twitter, Instagram, Mail, Phone, MapPin } from 'lucide-react';
+import { Facebook } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useLogo } from '../../context/LogoContext';
 
 const Footer: React.FC = () => {
+  const { logoUrl } = useLogo();
   return (
-    <footer className="bg-gray-900 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* Organization Info */}
-          <div className="col-span-1 md:col-span-2">
-            <div className="flex items-center space-x-2 mb-4">
-              <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">CBKM</span>
-              </div>
+    <footer style={{ background: '#111' }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
+          {/* Brand */}
+          <div className="md:col-span-5">
+            <div className="flex items-center gap-3 mb-5">
+              <img src={logoUrl} alt="CBKM Logo" className="w-11 h-11 object-contain rounded-full"
+                style={{ border: '2px solid rgba(201,168,76,0.5)' }} />
               <div>
-                <div className="text-lg font-bold">Calgary Bharathi Kalai Mandram</div>
-                <div className="text-sm text-gray-400">Tamil Association of Calgary</div>
+                <div className="text-base font-bold" style={{ color: '#C9A84C' }}>Calgary Bharathi Kalai Mandram</div>
+                <div className="text-xs tracking-wide" style={{ color: '#666' }}>Tamil Association of Calgary</div>
               </div>
             </div>
-            <p className="text-gray-300 mb-4">
+            <p className="text-sm leading-relaxed mb-4" style={{ color: '#777' }}>
               Promoting Heritage, Unity, and Tradition in Calgary's Tamil Community.
-              யாதும் ஊரே, யாவரும் கேளிர்; தீதும் நன்றும் பிறர்தர வாரா
             </p>
-            <div className="flex space-x-4">
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                <Facebook className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                <Twitter className="w-5 h-5" />
-              </a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                <Instagram className="w-5 h-5" />
-              </a>
-            </div>
+            <p className="font-serif italic text-sm mb-6" style={{ color: 'rgba(201,168,76,0.6)' }}>
+              யாதும் ஊரே, யாவரும் கேளிர்
+            </p>
+            <a href="https://www.facebook.com/p/Calgary-Bharathi-Kalai-Mandram-Tamil-Association-100070095836250/"
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm transition-colors duration-200"
+              style={{ color: '#666' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#C9A84C')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#666')}>
+              <Facebook className="w-4 h-4" /> Facebook
+            </a>
           </div>
 
-          {/* Quick Links */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
-            <ul className="space-y-2">
-              <li><a href="/events" className="text-gray-300 hover:text-white transition-colors">Events</a></li>
-              <li><a href="/sponsorship" className="text-gray-300 hover:text-white transition-colors">Sponsorship</a></li>
-              <li><a href="/gallery" className="text-gray-300 hover:text-white transition-colors">Gallery</a></li>
-              <li><a href="/contact" className="text-gray-300 hover:text-white transition-colors">Contact Us</a></li>
-              <li><a href="/about" className="text-gray-300 hover:text-white transition-colors">About Us</a></li>
+          {/* Navigation */}
+          <div className="md:col-span-3">
+            <h3 className="text-[11px] font-semibold tracking-[0.2em] uppercase mb-5" style={{ color: 'rgba(201,168,76,0.7)' }}>Navigation</h3>
+            <ul className="space-y-3">
+              {[
+                ['Events', '/events'], ['Sponsorship', '/sponsorship'], ['Gallery', '/gallery'],
+                ['Blog', '/blog'], ['Contact', '/contact'], ['About Us', '/about'],
+              ].map(([name, href]) => (
+                <li key={name}>
+                  <Link to={href} className="text-sm transition-colors duration-200"
+                    style={{ color: '#777' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#C9A84C')}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#777')}>
+                    {name}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
-          {/* Contact Info */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Contact Info</h3>
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2">
-                <Mail className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-300">info@cbkm.ca</span>
+          {/* Connect */}
+          <div className="md:col-span-4">
+            <h3 className="text-[11px] font-semibold tracking-[0.2em] uppercase mb-5" style={{ color: 'rgba(201,168,76,0.7)' }}>Connect</h3>
+            <div className="space-y-4 text-sm" style={{ color: '#777' }}>
+              <div className="flex items-start gap-3">
+                <span className="text-base">📍</span>
+                <span>Calgary, Alberta, Canada</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <Phone className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-300">+1 (403) 123-4567</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <MapPin className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-300">Calgary, AB, Canada</span>
+              <div className="flex items-start gap-3">
+                <span className="text-base">📧</span>
+                <a href="mailto:bharathikalaimandram@gmail.com" className="transition-colors duration-200 break-all"
+                  style={{ color: '#777' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#C9A84C')}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#777')}>
+                  bharathikalaimandram@gmail.com
+                </a>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="border-t border-gray-800 mt-8 pt-8 text-center">
-          <p className="text-gray-400">
-            © 2024 Calgary Bharathi Kalai Mandram. All rights reserved.
+        <div className="mt-14 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="text-xs" style={{ color: '#555' }}>
+            &copy; 2026 Calgary Bharathi Kalai Mandram. All rights reserved.
+          </p>
+          <p className="font-serif italic text-xs" style={{ color: 'rgba(201,168,76,0.3)' }}>
+            யாதும் ஊரே, யாவரும் கேளிர்
           </p>
         </div>
       </div>

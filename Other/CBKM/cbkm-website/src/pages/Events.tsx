@@ -9,7 +9,8 @@ import { createRegistration } from '../lib/db/registrations';
 
 const Events: React.FC = () => {
   const navigate = useNavigate();
-  const { events } = useEvents();
+  const { events: allEvents } = useEvents();
+  const events = allEvents.filter(e => !e.hidden);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [registrationType, setRegistrationType] = useState<'attendee' | 'participant'>('attendee');
   const [viewingPoster, setViewingPoster] = useState(false);

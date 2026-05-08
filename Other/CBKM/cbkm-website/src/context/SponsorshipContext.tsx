@@ -1,37 +1,38 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getSettings, setSetting } from '../lib/db/settings';
 
-interface SponsorshipContact {
-  email: string;
-  phone: string;
-}
-
+interface SponsorshipContact { email: string; phone: string; }
 interface SponsorshipContextType {
   sponsorshipContact: SponsorshipContact;
-  updateSponsorshipContact: (contact: SponsorshipContact) => void;
+  updateSponsorshipContact: (c: SponsorshipContact) => void;
 }
 
 const SponsorshipContext = createContext<SponsorshipContextType | undefined>(undefined);
 
 export const useSponsorship = () => {
-  const context = useContext(SponsorshipContext);
-  if (!context) {
-    throw new Error('useSponsorship must be used within a SponsorshipProvider');
-  }
-  return context;
+  const ctx = useContext(SponsorshipContext);
+  if (!ctx) throw new Error('useSponsorship must be used within SponsorshipProvider');
+  return ctx;
 };
 
-interface SponsorshipProviderProps {
-  children: ReactNode;
-}
-
-export const SponsorshipProvider: React.FC<SponsorshipProviderProps> = ({ children }) => {
+export const SponsorshipProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [sponsorshipContact, setSponsorshipContact] = useState<SponsorshipContact>({
-    email: 'bharathikalaimandram@gmail.com',
-    phone: '+1 (403) 123-4567'
+    email: 'bharathikalaimandram@gmail.com', phone: '+1 (403) 123-4567',
   });
 
-  const updateSponsorshipContact = (contact: SponsorshipContact) => {
-    setSponsorshipContact(contact);
+  useEffect(() => {
+    getSettings(['sponsorship_email', 'sponsorship_phone']).then(s => {
+      setSponsorshipContact({
+        email: s['sponsorship_email'] || 'bharathikalaimandram@gmail.com',
+        phone: s['sponsorship_phone'] || '+1 (403) 123-4567',
+      });
+    }).catch(() => {});
+  }, []);
+
+  const updateSponsorshipContact = (c: SponsorshipContact) => {
+    setSponsorshipContact(c);
+    setSetting('sponsorship_email', c.email).catch(console.error);
+    setSetting('sponsorship_phone', c.phone).catch(console.error);
   };
 
   return (

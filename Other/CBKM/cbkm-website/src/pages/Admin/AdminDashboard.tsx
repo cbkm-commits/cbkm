@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Calendar, Users, Image, HandHeart, Phone, Settings, LogOut,
   Plus, Edit, Trash2, Download, X, Save, UserPlus, UserCheck,
-  Upload, FileText, Settings2, ChevronRight, Mail, Paperclip, Loader, RefreshCw, Eye, EyeOff, Tag
+  Upload, FileText, Settings2, ChevronRight, Mail, Paperclip, Loader, RefreshCw, Eye, EyeOff, Tag, Vote, BarChart2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Event, FormField, Registration, Sponsor, SponsorshipPackage, Blog } from '../../types';
@@ -13,7 +13,8 @@ import { useEvents } from '../../context/EventsContext';
 import { fetchSponsors, createSponsor, updateSponsor, deleteSponsor, fetchPackages, createPackage, upsertPackage, deletePackage } from '../../lib/db/sponsors';
 import { fetchGallery, createGalleryImage, deleteGalleryImage } from '../../lib/db/gallery';
 import { fetchContacts } from '../../lib/db/contacts';
-import { fetchRegistrations, deleteRegistration, updateRegistration } from '../../lib/db/registrations';
+import { fetchRegistrations, deleteRegistration, updateRegistration, fetchVotingParticipants } from '../../lib/db/registrations';
+import { fetchVotes, deleteVotes, computeResults, VoteResult } from '../../lib/db/votes';
 import { getSettings, setSetting } from '../../lib/db/settings';
 import { fetchBlogs, createBlog, updateBlog, deleteBlog } from '../../lib/db/blogs';
 import { uploadImage, uploadFile } from '../../lib/storage';
@@ -184,6 +185,14 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     setRefreshing(false);
   };
 
+  // ── Inline registration quick-update ──────────────────────────────────────
+  const quickUpdateReg = async (id: string, patch: Partial<Registration>) => {
+    try {
+      const updated = await updateRegistration(id, patch);
+      setRegistrations(prev => prev.map(r => r.id === id ? updated : r));
+    } catch { showToast('Update failed', 'error'); }
+  };
+
   // ── Logo ───────────────────────────────────────────────────────────────────
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -214,11 +223,20 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
   const exportToXLSX = (type: 'attendees' | 'participants') => {
     const regs = registrations.filter(r => r.type === (type === 'attendees' ? 'attendee' : 'participant'));
+    const standardFieldNames = new Set(['fullName', 'name', 'email', 'phone', 'address', 'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6', 'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
+    const fieldLabelMap: Record<string, string> = {};
+    events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { if (f.name) fieldLabelMap[f.name] = f.label; }));
+    const relatedEventIds = new Set(regs.map(r => r.eventId));
+    const formKey = type === 'attendees' ? 'attendeeForm' : 'participantForm';
+    const configKeys = events.filter(e => relatedEventIds.has(e.id)).flatMap(e => (e[formKey] || []).filter((f: any) => f.name && !standardFieldNames.has(f.name)).map((f: any) => f.name));
+    const allCustomKeys = Array.from(new Set([...regs.flatMap(r => Object.keys(r.customFields || {})), ...configKeys]));
     const rows = regs.map(r => {
       const event = events.find(e => e.id === r.eventId);
-      return type === 'attendees'
+      const base: Record<string, any> = type === 'attendees'
         ? { Year: new Date(r.registrationDate).getFullYear(), 'Event Name': event?.name || '', Name: r.name, Email: r.email, Phone: r.phone, Tickets: r.numberOfTickets || 0, Adults: r.adults || 0, 'Kids >6': r.kidsAbove6 || 0, 'Kids <6': r.kidsBelow6 || 0 }
         : { Year: new Date(r.registrationDate).getFullYear(), 'Event Name': event?.name || '', Name: r.name, Email: r.email, Phone: r.phone, Participants: r.numberOfParticipants || 0, Adults: r.adults || 0, Category: r.category || '', 'Performance Details': r.performanceDetails || '' };
+      for (const key of allCustomKeys) { base[fieldLabelMap[key] || key] = r.customFields?.[key] || ''; }
+      return base;
     });
     const ws = XLSX.utils.json_to_sheet(rows); autoColWidths(ws, rows);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, type);
@@ -230,6 +248,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     { id: 'events', name: 'Events', icon: Calendar },
     { id: 'attendees', name: 'Attendees', icon: Users },
     { id: 'participants', name: 'Participants', icon: UserPlus },
+    { id: 'voting', name: 'Voting', icon: Vote },
     { id: 'sponsors', name: 'Sponsors', icon: HandHeart },
     { id: 'gallery', name: 'Gallery', icon: Image },
     { id: 'contacts', name: 'Contacts', icon: Phone },
@@ -266,6 +285,13 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-1">{event.name}</h3>
                 <p className="text-sm text-gray-500 mb-1">{formatEventDate(event.date)}</p>
+                {(event.hidden || event.attendeeFormPaused || event.participantFormPaused) && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {event.hidden && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full border border-gray-200">Hidden</span>}
+                    {event.attendeeFormPaused && <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200">Tickets paused</span>}
+                    {event.participantFormPaused && <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200">Registration paused</span>}
+                  </div>
+                )}
                 <p className="text-gray-600 text-sm mb-4 line-clamp-4">{event.description}</p>
                 <div className="flex space-x-2">
                   <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }}
@@ -364,9 +390,12 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
             </div>
             {(() => {
-              const customKeys = Array.from(new Set(filtered.flatMap(r => Object.keys(r.customFields || {}))));
+              const standardFieldNames = new Set(['fullName', 'name', 'email', 'phone', 'address', 'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6', 'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
               const fieldLabelMap: Record<string, string> = {};
-              events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { fieldLabelMap[f.name] = f.label; }));
+              events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { if (f.name) fieldLabelMap[f.name] = f.label; }));
+              const filteredEventIds = new Set(filtered.map(r => r.eventId));
+              const configKeys = events.filter(e => filteredEventIds.has(e.id)).flatMap(e => (e.attendeeForm || []).filter(f => f.name && !standardFieldNames.has(f.name)).map(f => f.name));
+              const customKeys = Array.from(new Set([...filtered.flatMap(r => Object.keys(r.customFields || {})), ...configKeys]));
               return (
                 <div className="bg-white rounded-lg shadow overflow-x-auto">
                   <table className="w-full">
@@ -502,9 +531,12 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
             </div>
             {(() => {
-              const customKeys = Array.from(new Set(filtered.flatMap(r => Object.keys(r.customFields || {}))));
+              const standardFieldNames = new Set(['fullName', 'name', 'email', 'phone', 'address', 'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6', 'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
               const fieldLabelMap: Record<string, string> = {};
-              events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { fieldLabelMap[f.name] = f.label; }));
+              events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { if (f.name) fieldLabelMap[f.name] = f.label; }));
+              const filteredEventIds = new Set(filtered.map(r => r.eventId));
+              const configKeys = events.filter(e => filteredEventIds.has(e.id)).flatMap(e => (e.participantForm || []).filter(f => f.name && !standardFieldNames.has(f.name)).map(f => f.name));
+              const customKeys = Array.from(new Set([...filtered.flatMap(r => Object.keys(r.customFields || {})), ...configKeys]));
               return (
                 <div className="bg-white rounded-lg shadow overflow-x-auto">
                   <table className="w-full">
@@ -520,6 +552,9 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                         {participantCols.category && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>}
                         {participantCols.performanceDetails && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Performance</th>}
                         {customKeys.map(k => <th key={k} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{fieldLabelMap[k] || k}</th>)}
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finalized</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Part #</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vote</th>
                         <th className="px-4 py-3" />
                       </tr>
                     </thead>
@@ -538,6 +573,27 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                             {participantCols.category && <td className="px-4 py-3 text-sm text-gray-500">{r.category || '—'}</td>}
                             {participantCols.performanceDetails && <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{r.performanceDetails || '—'}</td>}
                             {customKeys.map(k => <td key={k} className="px-4 py-3 text-sm text-gray-500">{r.customFields?.[k] || '—'}</td>)}
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => quickUpdateReg(r.id, { performanceFinalized: !r.performanceFinalized, ...(!r.performanceFinalized ? {} : { votingEnabled: false }) })}
+                                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${r.performanceFinalized ? 'bg-green-500' : 'bg-gray-200'}`}>
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${r.performanceFinalized ? 'translate-x-4' : 'translate-x-0'}`} />
+                              </button>
+                            </td>
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {r.performanceFinalized ? (
+                                <input defaultValue={r.participantNumber || ''} maxLength={15} placeholder="e.g. A01"
+                                  onBlur={e => { if (e.target.value !== (r.participantNumber || '')) quickUpdateReg(r.id, { participantNumber: e.target.value }); }}
+                                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                  className="w-20 px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-primary-400 focus:border-transparent" />
+                              ) : <span className="text-gray-300 text-xs">—</span>}
+                            </td>
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <button disabled={!r.performanceFinalized || !event?.votingEnabled}
+                                onClick={() => quickUpdateReg(r.id, { votingEnabled: !r.votingEnabled })}
+                                className={`relative inline-flex h-5 w-9 rounded-full border-2 border-transparent transition-colors ${!r.performanceFinalized || !event?.votingEnabled ? 'opacity-30 cursor-not-allowed bg-gray-200' : r.votingEnabled ? 'bg-primary-600 cursor-pointer' : 'bg-gray-200 cursor-pointer'}`}>
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${r.votingEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                              </button>
+                            </td>
                             <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end space-x-1">
                                 <button onClick={() => setEditingRegistration(r)} className="p-1 text-primary-600 hover:text-primary-800"><Edit className="w-4 h-4" /></button>
@@ -562,6 +618,255 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   };
 
   // ══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════
+  // VOTING TAB
+  // ══════════════════════════════════════════════════════════════════════════
+  const VotingTab = () => {
+    const [selectedEventId, setSelectedEventId] = useState(events.find(e => e.votingEnabled)?.id || events[0]?.id || '');
+    const [results, setResults] = useState<VoteResult[]>([]);
+    const [totalVotes, setTotalVotes] = useState(0);
+    const [vLoading, setVLoading] = useState(false);
+    const [voteParticipants, setVoteParticipants] = useState<Registration[]>([]);
+
+    // Attendee codes state
+    const [codesCount, setCodesCount] = useState(0);
+    const [generateCount, setGenerateCount] = useState(350);
+    const [codesGenerating, setCodesGenerating] = useState(false);
+
+    const selectedEvent = events.find(e => e.id === selectedEventId);
+
+    useEffect(() => {
+      if (!selectedEventId) return;
+      setVLoading(true);
+      const ev = events.find(e => e.id === selectedEventId);
+      Promise.all([
+        fetchVotingParticipants(selectedEventId),
+        fetchVotes(selectedEventId),
+        import('../../lib/db/eventCodes').then(m => m.fetchEventCodesCount(selectedEventId)),
+      ]).then(([parts, votes, count]) => {
+        setVoteParticipants(parts);
+        const computed = computeResults(votes, parts.map(p => ({ id: p.id, name: p.name, category: p.category || '', participantNumber: p.participantNumber || '' })), ev?.votingType || 'choice');
+        setResults(computed);
+        setTotalVotes(votes.length);
+        setCodesCount(count);
+      }).catch(() => {}).finally(() => setVLoading(false));
+    }, [selectedEventId]);
+
+    const handleGenerateCodes = async () => {
+      if (!selectedEventId || codesGenerating) return;
+      setCodesGenerating(true);
+      try {
+        const { generateEventCodes, fetchEventCodesCount } = await import('../../lib/db/eventCodes');
+        await generateEventCodes(selectedEventId, generateCount);
+        const count = await fetchEventCodesCount(selectedEventId);
+        setCodesCount(count);
+        showToast(`${generateCount} codes generated`);
+      } catch { showToast('Failed to generate codes', 'error'); }
+      setCodesGenerating(false);
+    };
+
+    const handleDownloadCodes = async () => {
+      if (!selectedEventId) return;
+      try {
+        const { fetchEventCodesAll } = await import('../../lib/db/eventCodes');
+        const codes = await fetchEventCodesAll(selectedEventId);
+        const txt = codes.join('\n');
+        const blob = new Blob([txt], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `attendee-codes-${selectedEvent?.name || selectedEventId}.txt`; a.click();
+        URL.revokeObjectURL(url);
+      } catch { showToast('Download failed', 'error'); }
+    };
+
+    const handleClearCodes = async () => {
+      if (!selectedEventId) return;
+      if (!window.confirm(`Delete all ${codesCount} attendee codes for this event? This cannot be undone.`)) return;
+      try {
+        const { deleteEventCodes } = await import('../../lib/db/eventCodes');
+        await deleteEventCodes(selectedEventId);
+        setCodesCount(0);
+        showToast('Codes cleared');
+      } catch { showToast('Failed to clear codes', 'error'); }
+    };
+
+    const exportCSV = () => {
+      const rows = [['Rank', 'Participant #', 'Name', 'Category', 'Votes', selectedEvent?.votingType === 'choice' ? 'Percent (%)' : 'Avg Score']];
+      results.forEach((r, i) => rows.push([
+        String(i + 1), r.registration.participantNumber, r.registration.name, r.registration.category,
+        String(r.totalVotes), selectedEvent?.votingType === 'choice' ? String(r.percent) : String(r.avgScore),
+      ]));
+      const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `voting-results-${selectedEvent?.name || selectedEventId}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const toggleResultsPublic = async () => {
+      if (!selectedEvent) return;
+      await editEvent(selectedEvent.id, { ...selectedEvent, resultsPublic: !selectedEvent.resultsPublic });
+    };
+
+    const handleResetVotes = async () => {
+      if (!selectedEventId) return;
+      if (!window.confirm('Reset ALL votes for this event? This cannot be undone.')) return;
+      await deleteVotes(selectedEventId);
+      setResults([]); setTotalVotes(0);
+      showToast('Votes reset');
+    };
+
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Audience Voting</h2>
+          <div className="flex gap-3">
+            {totalVotes > 0 && (
+              <button onClick={exportCSV} className="flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm">
+                <Download className="w-4 h-4 mr-1.5" />Export CSV
+              </button>
+            )}
+            <button onClick={handleResetVotes} className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50">
+              Reset Votes
+            </button>
+          </div>
+        </div>
+
+        {/* Event picker */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex-1 min-w-48">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Event</label>
+              <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-primary-500">
+                {events.map(e => <option key={e.id} value={e.id}>{e.name}{e.votingEnabled ? ' 🔴 LIVE' : ''}</option>)}
+              </select>
+            </div>
+            {selectedEvent && (
+              <>
+                <div className="text-sm text-gray-500">
+                  Type: <span className="font-medium capitalize">{selectedEvent.votingType || 'choice'}</span>
+                </div>
+                {selectedEvent.votingCode && (
+                  <div className="text-sm text-gray-500">
+                    Code: <span className="font-mono font-bold text-gray-800">{selectedEvent.votingCode}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <span>Show results publicly</span>
+                  <button onClick={toggleResultsPublic}
+                    className={`relative inline-flex h-6 w-11 cursor-pointer rounded-full border-2 border-transparent transition-colors ${selectedEvent.resultsPublic ? 'bg-primary-600' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${selectedEvent.resultsPublic ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Attendee codes */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Attendee Codes</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {codesCount > 0
+                  ? <span className="text-green-600 font-medium">{codesCount} codes generated</span>
+                  : 'No codes yet — generate codes to require attendees to enter their code before voting'}
+              </p>
+            </div>
+            {codesCount > 0 && (
+              <div className="flex gap-2">
+                <button onClick={handleDownloadCodes}
+                  className="flex items-center px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-xs font-medium">
+                  <Download className="w-3.5 h-3.5 mr-1" />Download
+                </button>
+                <button onClick={handleClearCodes}
+                  className="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg hover:bg-red-50 text-xs font-medium">
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-1">
+              <label className="text-xs text-gray-500 whitespace-nowrap">Generate</label>
+              <input type="number" min={1} max={1000} value={generateCount}
+                onChange={e => setGenerateCount(Math.max(1, Math.min(1000, Number(e.target.value))))}
+                className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-primary-500" />
+              <label className="text-xs text-gray-500">codes</label>
+            </div>
+            <button onClick={handleGenerateCodes} disabled={codesGenerating}
+              className="px-4 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium disabled:opacity-60 whitespace-nowrap">
+              {codesGenerating ? 'Generating...' : codesCount > 0 ? 'Generate More' : 'Generate Codes'}
+            </button>
+          </div>
+          {codesCount > 0 && (
+            <p className="text-xs text-gray-400 mt-2">
+              Codes are 6-character alphanumeric. Attendees enter their code at <span className="font-mono">/vote</span> before voting.
+            </p>
+          )}
+        </div>
+
+        {/* Status banner */}
+        {selectedEvent && (
+          <div className={`mb-4 p-3 rounded-xl border flex items-center gap-3 text-sm ${selectedEvent.votingEnabled ? 'bg-green-50 border-green-200 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+            <span className={`w-2.5 h-2.5 rounded-full ${selectedEvent.votingEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+            <span className="font-medium">{selectedEvent.votingEnabled ? 'Voting is LIVE — audience can vote now' : 'Voting is closed for this event'}</span>
+            <span className="ml-auto">{totalVotes} vote{totalVotes !== 1 ? 's' : ''} cast</span>
+          </div>
+        )}
+
+        {/* Performers list */}
+        {voteParticipants.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Voting-Enabled Performances ({voteParticipants.length})</h3>
+            <div className="flex flex-wrap gap-2">
+              {voteParticipants.map(p => (
+                <span key={p.id} className="text-xs px-3 py-1.5 bg-primary-50 text-primary-700 rounded-full border border-primary-200">
+                  {p.participantNumber && <span className="font-mono font-bold mr-1">#{p.participantNumber}</span>}{p.name}{p.category ? ` · ${p.category}` : ''}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Results */}
+        {vLoading ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">Loading...</div>
+        ) : results.length === 0 || totalVotes === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <BarChart2 className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm">No votes recorded yet for this event.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-base font-semibold text-gray-800 mb-4">Results</h3>
+            {results.map((r, i) => (
+              <div key={r.registration.id} className="mb-4">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className={`text-sm ${i === 0 ? 'font-bold text-yellow-600' : 'text-gray-700'}`}>
+                    {i === 0 ? '🏆 ' : `${i + 1}. `}{r.registration.name}
+                    {r.registration.participantNumber && <span className="ml-2 text-xs text-primary-600 font-mono">#{r.registration.participantNumber}</span>}
+                    {r.registration.category && <span className="ml-2 text-xs text-gray-400">{r.registration.category}</span>}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {selectedEvent?.votingType === 'choice'
+                      ? `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''} · ${r.percent}%`
+                      : `avg ${r.avgScore}${selectedEvent?.votingType === 'stars' ? '★' : '/10'} · ${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
+                <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${i === 0 ? 'bg-yellow-400' : 'bg-gray-400'}`}
+                    style={{ width: `${selectedEvent?.votingType === 'choice' ? r.percent : (r.avgScore / (selectedEvent?.votingType === 'stars' ? 5 : 10)) * 100}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // SPONSORS TAB
   // ══════════════════════════════════════════════════════════════════════════
   const renderSponsorsTab = () => (
@@ -974,6 +1279,25 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
     const handleSave = async () => {
       if (!eventData.name || !eventData.date) { showToast('Name and date are required', 'error'); return; }
+      const validateFields = (fields: FormField[], label: string) => {
+        for (const f of fields) {
+          if (!f.name.trim()) { showToast(`All ${label} form fields need a "Field Name" filled in`, 'error'); return false; }
+        }
+        const names = fields.map(f => f.name);
+        const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+        if (dupes.length) { showToast(`Duplicate field names in ${label} form: ${Array.from(new Set(dupes)).join(', ')}`, 'error'); return false; }
+        return true;
+      };
+      if (!validateFields(eventData.attendeeForm || [], 'Attendee') || !validateFields(eventData.participantForm || [], 'Participant')) return;
+      // One-event-at-a-time voting check
+      if (eventData.votingEnabled) {
+        const conflict = events.find(e => e.votingEnabled && e.id !== editingEvent?.id);
+        if (conflict) {
+          const proceed = window.confirm(`"${conflict.name}" already has audience voting enabled. Only one event can have voting open at a time.\n\nDo you want to enable voting for this event instead? (This will disable it for "${conflict.name}")`);
+          if (!proceed) return;
+          await editEvent(conflict.id, { ...conflict, votingEnabled: false });
+        }
+      }
       setSaving(true);
       try {
         if (editingEvent) {
@@ -1038,6 +1362,22 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                 <textarea rows={3} value={eventData.description} onChange={e => setEventData({ ...eventData, description: e.target.value })}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm resize-none" placeholder="Brief description of the event" />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Adult Ticket Price (CAD)</label>
+                  <input type="number" min="0" step="0.01" placeholder="0.00"
+                    value={eventData.adultTicketPrice || ''}
+                    onChange={e => setEventData(prev => ({ ...prev, adultTicketPrice: e.target.value === '' ? 0 : Number(e.target.value) }))}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Kids Above 6 Ticket Price (CAD)</label>
+                  <input type="number" min="0" step="0.01" placeholder="0.00"
+                    value={eventData.kidsAbove6TicketPrice || ''}
+                    onChange={e => setEventData(prev => ({ ...prev, kidsAbove6TicketPrice: e.target.value === '' ? 0 : Number(e.target.value) }))}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm" />
+                </div>
+              </div>
             </div>
 
             {/* Media */}
@@ -1081,6 +1421,75 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                 </label>
                 {pdfError && <p className="text-xs text-red-500 mt-1">{pdfError}</p>}
               </div>
+            </div>
+
+            {/* Visibility & Access */}
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Visibility & Access</h3>
+              {([
+                { key: 'hidden', label: 'Hide event from website', desc: 'Event will not appear on the public events page' },
+                { key: 'attendeeFormPaused', label: 'Pause ticket registration', desc: 'Attendee form will show a closed message' },
+                { key: 'participantFormPaused', label: 'Pause participant registration', desc: 'Participant form will show a closed message' },
+              ] as { key: keyof Event; label: string; desc: string }[]).map(({ key, label, desc }) => (
+                <div key={key} className="flex items-start justify-between gap-4 bg-white rounded-xl border border-gray-200 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+                  </div>
+                  <button type="button"
+                    onClick={() => setEventData(prev => ({ ...prev, [key]: !prev[key as keyof Event] }))}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${eventData[key] ? 'bg-primary-600' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${eventData[key] ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Voting Settings */}
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Audience Voting</h3>
+              <div className="flex items-start justify-between gap-4 bg-white rounded-xl border border-gray-200 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Enable audience voting</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Allows audience to vote on finalized performances at /vote</p>
+                </div>
+                <button type="button"
+                  onClick={() => setEventData(prev => ({ ...prev, votingEnabled: !prev.votingEnabled }))}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${eventData.votingEnabled ? 'bg-primary-600' : 'bg-gray-200'}`}>
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${eventData.votingEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              {eventData.votingEnabled && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Voting Type</label>
+                    <select value={eventData.votingType || 'choice'}
+                      onChange={e => setEventData(prev => ({ ...prev, votingType: e.target.value as any }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                      <option value="choice">Single Choice — pick one performer</option>
+                      <option value="stars">Star Rating — rate each 1–5 ★</option>
+                      <option value="score">Score — give each 1–10 points</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Access Code <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input value={eventData.votingCode || ''} maxLength={10} placeholder="e.g. DANCE26"
+                      onChange={e => setEventData(prev => ({ ...prev, votingCode: e.target.value.toUpperCase() }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent font-mono" />
+                  </div>
+                  <div className="col-span-2 flex items-start justify-between gap-4 bg-white rounded-xl border border-gray-200 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Publish results publicly</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Shows results at /results for the audience</p>
+                    </div>
+                    <button type="button"
+                      onClick={() => setEventData(prev => ({ ...prev, resultsPublic: !prev.resultsPublic }))}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${eventData.resultsPublic ? 'bg-primary-600' : 'bg-gray-200'}`}>
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${eventData.resultsPublic ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Registration Forms */}
@@ -1327,7 +1736,23 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     const [form, setForm] = useState<Registration>({ ...r });
     const [saving, setSaving] = useState(false);
     const set = (k: keyof Registration, v: any) => setForm(f => ({ ...f, [k]: v }));
-    const isAttendee = r.type === 'attendee';
+    const setCustom = (key: string, val: string) => setForm(f => ({ ...f, customFields: { ...(f.customFields || {}), [key]: val } }));
+
+    const isAttendee = form.type === 'attendee';
+    const regEvent = events.find(e => e.id === r.eventId);
+
+    // Standard field names already rendered explicitly — skip them in custom fields section
+    const STANDARD = new Set(['fullName', 'name', 'email', 'phone', 'phoneNumber', 'address',
+      'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6',
+      'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
+
+    // Custom fields from the event's form that aren't standard
+    const eventForm = isAttendee ? (regEvent?.attendeeForm || []) : (regEvent?.participantForm || []);
+    const customFormFields = eventForm.filter(f => f.name && !STANDARD.has(f.name));
+
+    // Category field (select or fallback to defaults)
+    const categoryField = regEvent?.participantForm?.find(f => f.name === 'category')
+      || regEvent?.participantForm?.find(f => f.type === 'select' && f.label?.toLowerCase().includes('category'));
 
     const handleSave = async () => {
       setSaving(true);
@@ -1340,53 +1765,114 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       setSaving(false);
     };
 
-    const field = (label: string, k: keyof Registration, type = 'text') => (
-      <div>
+    const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent';
+
+    const stdField = (label: string, k: keyof Registration, type = 'text') => (
+      <div key={k}>
         <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
         <input type={type} value={(form[k] as any) ?? ''} onChange={e => set(k, type === 'number' ? Number(e.target.value) : e.target.value)}
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+          className={inputCls} />
       </div>
     );
+
+    const renderCustomField = (f: { id: string; name: string; type: string; label: string; options?: string[] }) => {
+      const val = form.customFields?.[f.name] || '';
+      if (f.type === 'select') {
+        const opts = f.options || [];
+        const allOpts = val && !opts.includes(val) ? [val, ...opts] : opts;
+        return (
+          <div key={f.id}>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+            <select value={val} onChange={e => setCustom(f.name, e.target.value)} className={inputCls + ' bg-gray-50'}>
+              <option value="">Select...</option>
+              {allOpts.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        );
+      }
+      if (f.type === 'textarea') {
+        return (
+          <div key={f.id} className="col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+            <textarea rows={2} value={val} onChange={e => setCustom(f.name, e.target.value)} className={inputCls + ' resize-none'} />
+          </div>
+        );
+      }
+      return (
+        <div key={f.id}>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+          <input type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : 'text'}
+            value={val} onChange={e => setCustom(f.name, e.target.value)} className={inputCls} />
+        </div>
+      );
+    };
 
     return (
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b">
-            <h2 className="text-lg font-bold text-gray-900">Edit {isAttendee ? 'Attendee' : 'Participant'}</h2>
+            <h2 className="text-lg font-bold text-gray-900">Edit Registration</h2>
             <button onClick={() => setEditingRegistration(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
           </div>
           <div className="overflow-y-auto p-6 space-y-3">
+
+            {/* Registration type */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Registration Type</label>
+              <select value={form.type} onChange={e => set('type', e.target.value as 'attendee' | 'participant')}
+                className={inputCls + ' bg-gray-50'}>
+                <option value="attendee">Attendee</option>
+                <option value="participant">Participant</option>
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              {field('Full Name', 'name')}
-              {field('Email', 'email', 'email')}
-              {field('Phone', 'phone')}
-              {field('Address', 'address')}
+              {stdField('Full Name', 'name')}
+              {stdField('Email', 'email', 'email')}
+              {stdField('Phone', 'phone')}
+              {stdField('Address', 'address')}
+
               {isAttendee ? (<>
-                {field('# Tickets', 'numberOfTickets', 'number')}
-                {field('Adults', 'adults', 'number')}
-                {field('Kids (above 6)', 'kidsAbove6', 'number')}
-                {field('Kids (below 6)', 'kidsBelow6', 'number')}
+                {stdField('# Tickets', 'numberOfTickets', 'number')}
+                {stdField('Adults', 'adults', 'number')}
+                {stdField('Kids (above 6)', 'kidsAbove6', 'number')}
+                {stdField('Kids (below 6)', 'kidsBelow6', 'number')}
               </>) : (<>
-                {field('# Participants', 'numberOfParticipants', 'number')}
-                {field('Adults', 'adults', 'number')}
+                {stdField('# Participants', 'numberOfParticipants', 'number')}
+                {stdField('Adults', 'adults', 'number')}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
-                  <input value={form.category || ''} onChange={e => set('category', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
+                  {(() => {
+                    const base = categoryField?.type === 'select' && (categoryField.options || []).length > 0
+                      ? categoryField.options!
+                      : ['Music', 'Dance', 'Drama', 'Poetry', 'Other'];
+                    const opts = form.category && !base.includes(form.category) ? [form.category, ...base] : base;
+                    return (
+                      <select value={form.category || ''} onChange={e => set('category', e.target.value)}
+                        className={inputCls + ' bg-gray-50'}>
+                        <option value="">Select category...</option>
+                        {opts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    );
+                  })()}
                 </div>
               </>)}
+
+              {/* Custom fields from event form */}
+              {customFormFields.map(f => renderCustomField(f))}
             </div>
+
             {!isAttendee && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Performance Details</label>
                 <textarea rows={2} value={form.performanceDetails || ''} onChange={e => set('performanceDetails', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none" />
+                  className={inputCls + ' resize-none'} />
               </div>
             )}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Special Requirements</label>
               <textarea rows={2} value={form.specialRequirements || ''} onChange={e => set('specialRequirements', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none" />
+                className={inputCls + ' resize-none'} />
             </div>
           </div>
           <div className="flex space-x-3 px-6 py-4 border-t bg-gray-50 rounded-b-2xl">
@@ -1479,6 +1965,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         {activeTab === 'events' && renderEventsTab()}
         {activeTab === 'attendees' && renderAttendeesTab()}
         {activeTab === 'participants' && renderParticipantsTab()}
+        {activeTab === 'voting' && <VotingTab />}
         {activeTab === 'sponsors' && renderSponsorsTab()}
         {activeTab === 'gallery' && renderGalleryTab()}
         {activeTab === 'contacts' && renderContactsTab()}
@@ -1597,7 +2084,7 @@ const AttendeeParticipantConfig: React.FC<ConfigProps> = ({ type, emailConfig, o
     setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + tag.length; ta.focus(); }, 0);
   };
 
-  const attendeeVars = ['{{name}}','{{email}}','{{phone}}','{{event}}','{{date}}','{{location}}','{{tickets}}','{{adults}}','{{kidsAbove6}}','{{kidsBelow6}}'];
+  const attendeeVars = ['{{name}}','{{email}}','{{phone}}','{{event}}','{{date}}','{{location}}','{{tickets}}','{{adults}}','{{kidsAbove6}}','{{kidsBelow6}}','{{totalAmount}}'];
   const participantVars = ['{{name}}','{{email}}','{{phone}}','{{event}}','{{date}}','{{location}}','{{participants}}','{{adults}}','{{category}}','{{performanceDetails}}'];
   const vars = type === 'attendee' ? attendeeVars : participantVars;
 

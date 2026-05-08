@@ -1,202 +1,285 @@
-import React from 'react';
-import { HandHeart, Star, Globe, Phone, Mail, ExternalLink } from 'lucide-react';
-import { mockSponsors } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { HandHeart, Star, Globe, Mail, X, Send, ArrowRight } from 'lucide-react';
+import { fetchSponsors } from '../lib/db/sponsors';
+import { getSettings } from '../lib/db/settings';
+import { createContact } from '../lib/db/contacts';
 import { useSponsorship } from '../context/SponsorshipContext';
+
+interface Sponsor { id: string; name: string; level: string; description: string; website?: string; logo?: string; }
+interface SponsorLevel { key: string; label: string; amount: string; benefits: string[]; }
+
+const tierIcons: Record<string, string> = { platinum: '★', gold: '★', silver: '◈', bronze: '◉', community: '◎' };
+const tierColors: Record<string, { bg: string; border: string; badge: string; badgeText: string }> = {
+  platinum: { bg: 'rgba(51,51,51,0.04)', border: 'rgba(51,51,51,0.2)', badge: '#333', badgeText: '#fff' },
+  gold:     { bg: 'rgba(201,168,76,0.06)', border: 'rgba(201,168,76,0.25)', badge: '#C9A84C', badgeText: '#1a1a1a' },
+  silver:   { bg: 'rgba(128,128,128,0.04)', border: 'rgba(128,128,128,0.2)', badge: '#888', badgeText: '#fff' },
+  bronze:   { bg: 'rgba(139,26,26,0.04)', border: 'rgba(139,26,26,0.15)', badge: '#8B1A1A', badgeText: '#fff' },
+};
+const getTierColor = (key: string) => tierColors[key] || tierColors['bronze'];
+
+const defaultLevels: SponsorLevel[] = [
+  { key: 'platinum', label: 'Platinum', amount: '$5,000+', benefits: ['All Gold benefits', 'Title sponsorship', 'VIP event access'] },
+  { key: 'gold',     label: 'Gold',     amount: '$2,500 - $4,999', benefits: ['All Silver benefits', 'Banner placement at events', 'Sponsor booth space'] },
+  { key: 'silver',   label: 'Silver',   amount: '$1,000 - $2,499', benefits: ['All Bronze benefits', 'Logo on event materials', 'Verbal recognition at events'] },
+  { key: 'bronze',   label: 'Bronze',   amount: '$500 - $999',     benefits: ['Logo on website', 'Social media mention', 'Event recognition'] },
+];
 
 const Sponsorship: React.FC = () => {
   const { sponsorshipContact } = useSponsorship();
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  const [levels, setLevels] = useState<SponsorLevel[]>(defaultLevels);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sendError, setSendError] = useState('');
 
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'platinum':
-        return 'bg-gray-100 border-gray-300';
-      case 'gold':
-        return 'bg-yellow-50 border-yellow-300';
-      case 'silver':
-        return 'bg-gray-50 border-gray-300';
-      case 'bronze':
-        return 'bg-orange-50 border-orange-300';
-      default:
-        return 'bg-gray-50 border-gray-300';
-    }
-  };
+  useEffect(() => {
+    fetchSponsors().then(data => setSponsors(data as Sponsor[])).catch(() => {});
+    getSettings(['sponsorship_levels']).then(s => {
+      if (s['sponsorship_levels']) {
+        try { setLevels(JSON.parse(s['sponsorship_levels'])); } catch {}
+      }
+    }).catch(() => {});
+  }, []);
 
-  const getLevelBadge = (level: string) => {
-    switch (level) {
-      case 'platinum':
-        return 'bg-gray-800 text-white';
-      case 'gold':
-        return 'bg-yellow-500 text-white';
-      case 'silver':
-        return 'bg-gray-500 text-white';
-      case 'bronze':
-        return 'bg-orange-600 text-white';
-      default:
-        return 'bg-gray-500 text-white';
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSending(true);
+    setSendError('');
+    try {
+      await createContact({ name: contactForm.name, email: contactForm.email, phone: '', message: `[Sponsorship Inquiry] ${contactForm.message}` });
+      fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: contactForm.name, email: contactForm.email, message: contactForm.message }),
+      }).catch(() => {});
+      setSent(true);
+    } catch {
+      setSendError('Failed to send. Please try again.');
+    } finally {
+      setSending(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Our Sponsors
+    <div>
+      {/* Hero */}
+      <section className="py-24 animate-fade-in" style={{ background: 'linear-gradient(160deg, #111, #1a1a1a)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <span className="section-label">Partner With Us</span>
+          <h1 className="mt-4 text-white font-bold font-serif" style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', letterSpacing: '-0.01em' }}>
+            <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Sponsorship</em>
           </h1>
-          <p className="text-xl text-gray-600 mb-8">
-            Thank you to our generous sponsors who support Calgary's Tamil community
+          <div className="divider center" style={{ marginTop: '1.5rem' }} />
+          <p className="text-lg leading-[1.8]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            Support Tamil culture and community in Calgary — and grow your brand with a dedicated audience
           </p>
         </div>
+      </section>
 
-        {/* Sponsorship CTA */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-800 text-white rounded-lg p-8 mb-12">
-          <div className="text-center">
-            <HandHeart className="w-16 h-16 mx-auto mb-4" />
-            <h2 className="text-3xl font-bold mb-4">Become a Sponsor</h2>
-            <p className="text-xl mb-6 text-primary-100">
-              Support our community and promote your business to Calgary's Tamil community
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white bg-opacity-10 rounded-lg p-4">
-                <h3 className="font-semibold mb-2">Brand Visibility</h3>
-                <p className="text-primary-100">Reach thousands of community members through our events and platforms</p>
-              </div>
-              <div className="bg-white bg-opacity-10 rounded-lg p-4">
-                <h3 className="font-semibold mb-2">Community Impact</h3>
-                <p className="text-primary-100">Support cultural preservation and community building initiatives</p>
-              </div>
-              <div className="bg-white bg-opacity-10 rounded-lg p-4">
-                <h3 className="font-semibold mb-2">Networking</h3>
-                <p className="text-primary-100">Connect with local businesses and community leaders</p>
-              </div>
-            </div>
-            <button className="bg-white text-primary-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-              Contact Us About Sponsorship
-            </button>
+      {/* Why Sponsor */}
+      <section className="py-24" style={{ background: 'var(--surface-alt)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <span className="section-label">Why Sponsor</span>
+            <h2 className="mt-3 font-bold font-serif" style={{ fontSize: 'clamp(2rem, 3vw, 2.8rem)', letterSpacing: '-0.01em', color: 'var(--text)' }}>
+              Make an <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Impact</em>
+            </h2>
+            <div className="divider center" />
           </div>
-        </div>
-
-        {/* Current Sponsors */}
-        <div className="mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">Our Valued Sponsors</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {mockSponsors.map((sponsor) => (
-              <div
-                key={sponsor.id}
-                className={`bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow border-2 ${getLevelColor(
-                  sponsor.level
-                )}`}
-              >
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-24 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
-                      <span className="text-gray-500 text-xs">Logo</span>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getLevelBadge(sponsor.level)}`}>
-                      {sponsor.level.charAt(0).toUpperCase() + sponsor.level.slice(1)}
-                    </span>
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">{sponsor.name}</h3>
-                  <p className="text-gray-600 mb-4">{sponsor.description}</p>
-                  <div className="flex space-x-2">
-                    {sponsor.website && (
-                      <a
-                        href={sponsor.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center text-primary-600 hover:text-primary-700 text-sm font-semibold"
-                      >
-                        <Globe className="w-4 h-4 mr-1" />
-                        Website
-                      </a>
-                    )}
-                  </div>
-                </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+            {[
+              ['500+', 'Community Members'],
+              ['3+', 'Events Per Year'],
+              ['18+', 'Years of Service'],
+              ['100%', 'Community Focused'],
+            ].map(([num, label]) => (
+              <div key={label} className="text-center rounded-2xl p-6 card-hover"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <div className="text-2xl font-bold mb-1 font-serif" style={{ color: '#C9A84C' }}>{num}</div>
+                <div className="text-sm" style={{ color: 'var(--text-muted)' }}>{label}</div>
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Sponsorship Levels */}
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">Sponsorship Levels</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="text-center p-6 border-2 border-gray-200 rounded-lg">
-              <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Star className="w-8 h-8 text-orange-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Bronze</h3>
-              <p className="text-gray-600 mb-4">$500 - $999</p>
-              <ul className="text-sm text-gray-600 space-y-2 text-left">
-                <li>• Logo on website</li>
-                <li>• Social media mention</li>
-                <li>• Event recognition</li>
-              </ul>
-            </div>
-            <div className="text-center p-6 border-2 border-gray-200 rounded-lg">
-              <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Star className="w-8 h-8 text-gray-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Silver</h3>
-              <p className="text-gray-600 mb-4">$1,000 - $2,499</p>
-              <ul className="text-sm text-gray-600 space-y-2 text-left">
-                <li>• All Bronze benefits</li>
-                <li>• Logo on event materials</li>
-                <li>• Verbal recognition at events</li>
-              </ul>
-            </div>
-            <div className="text-center p-6 border-2 border-yellow-300 rounded-lg bg-yellow-50">
-              <div className="bg-yellow-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Star className="w-8 h-8 text-yellow-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Gold</h3>
-              <p className="text-gray-600 mb-4">$2,500 - $4,999</p>
-              <ul className="text-sm text-gray-600 space-y-2 text-left">
-                <li>• All Silver benefits</li>
-                <li>• Banner placement at events</li>
-                <li>• Sponsor booth space</li>
-              </ul>
-            </div>
-            <div className="text-center p-6 border-2 border-gray-800 rounded-lg bg-gray-100">
-              <div className="bg-gray-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Star className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Platinum</h3>
-              <p className="text-gray-600 mb-4">$5,000+</p>
-              <ul className="text-sm text-gray-600 space-y-2 text-left">
-                <li>• All Gold benefits</li>
-                <li>• Title sponsorship</li>
-                <li>• VIP event access</li>
-              </ul>
-            </div>
+          <div className="text-center">
+            <button onClick={() => setShowContactModal(true)} className="btn btn-primary inline-flex items-center">
+              Contact Us About Sponsorship <ArrowRight className="ml-2 w-4 h-4" />
+            </button>
           </div>
         </div>
+      </section>
 
-        {/* Contact Information */}
-        <div className="mt-12 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Interested in Sponsoring?</h2>
-          <p className="text-gray-600 mb-6">
+      {/* Current Sponsors */}
+      {sponsors.length > 0 && (
+        <section className="py-24" style={{ background: 'var(--surface)' }}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-14">
+              <span className="section-label">Thank You</span>
+              <h2 className="mt-3 font-bold font-serif" style={{ fontSize: 'clamp(2rem, 3vw, 2.8rem)', letterSpacing: '-0.01em', color: 'var(--text)' }}>
+                Our Valued <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Sponsors</em>
+              </h2>
+              <div className="divider center" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {sponsors.map((sponsor) => {
+                const c = getTierColor(sponsor.level);
+                return (
+                  <div key={sponsor.id} className="rounded-2xl overflow-hidden card-hover"
+                    style={{ background: 'var(--surface)', border: `2px solid ${c.border}` }}>
+                    <div className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="w-24 h-16 rounded-xl flex items-center justify-center overflow-hidden"
+                          style={{ background: 'var(--surface-alt)', border: '1px solid var(--border)' }}>
+                          {sponsor.logo
+                            ? <img src={sponsor.logo} alt={sponsor.name} className="w-full h-full object-contain p-1" />
+                            : <span style={{ color: 'var(--text-muted)', opacity: 0.4 }} className="text-xs">Logo</span>}
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold"
+                          style={{ background: c.badge, color: c.badgeText }}>
+                          {sponsor.level.charAt(0).toUpperCase() + sponsor.level.slice(1)}
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--text)' }}>{sponsor.name}</h3>
+                      <div className="prose prose-sm max-w-none mb-4 leading-[1.8]" style={{ color: 'var(--text-muted)' }}
+                        dangerouslySetInnerHTML={{ __html: sponsor.description }} />
+                      {sponsor.website && (
+                        <a href={sponsor.website} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center text-sm font-semibold hover:opacity-75 transition-opacity" style={{ color: '#C9A84C' }}>
+                          <Globe className="w-4 h-4 mr-1" />Website
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Sponsorship Levels */}
+      <section className="py-24" style={{ background: sponsors.length > 0 ? 'var(--surface-alt)' : 'var(--surface)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <span className="section-label">Packages</span>
+            <h2 className="mt-3 font-bold font-serif" style={{ fontSize: 'clamp(2rem, 3vw, 2.8rem)', letterSpacing: '-0.01em', color: 'var(--text)' }}>
+              Sponsorship <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Levels</em>
+            </h2>
+            <div className="divider center" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {levels.map(lvl => {
+              const c = getTierColor(lvl.key);
+              return (
+                <div key={lvl.key} className="rounded-2xl p-6 text-center card-hover"
+                  style={{ background: c.bg, border: `2px solid ${c.border}` }}>
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl"
+                    style={{ background: c.badge, color: c.badgeText }}>
+                    {tierIcons[lvl.key] || '◎'}
+                  </div>
+                  <h3 className="text-xl font-semibold mb-1" style={{ color: 'var(--text)' }}>{lvl.label}</h3>
+                  <p className="font-bold mb-4" style={{ color: '#C9A84C' }}>{lvl.amount}</p>
+                  <ul className="text-sm text-left space-y-2 leading-[1.8]" style={{ color: 'var(--text-muted)' }}>
+                    {lvl.benefits.filter(b => b.trim()).map((b, i) => <li key={i}>✓ {b}</li>)}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Custom Partnership CTA */}
+      <section className="py-24" style={{ background: 'linear-gradient(160deg, #111, #1a1a1a)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <span className="section-label">Get Started</span>
+          <h2 className="mt-3 font-bold font-serif text-white" style={{ fontSize: 'clamp(2rem, 3vw, 2.8rem)', letterSpacing: '-0.01em' }}>
+            Interested in <em style={{ color: '#C9A84C', fontStyle: 'italic' }}>Sponsoring?</em>
+          </h2>
+          <div className="divider center" />
+          <p className="mb-8 leading-[1.8]" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Contact our sponsorship team to learn more about partnership opportunities
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <a
-              href={`mailto:${sponsorshipContact.email}`}
-              className="flex items-center text-primary-600 hover:text-primary-700 font-semibold"
-            >
-              <Mail className="w-5 h-5 mr-2" />
-              {sponsorshipContact.email}
+            <a href={`mailto:${sponsorshipContact.email}`}
+              className="flex items-center font-semibold hover:opacity-75 transition-opacity" style={{ color: '#C9A84C' }}>
+              <Mail className="w-5 h-5 mr-2" />{sponsorshipContact.email}
             </a>
-            <a
-              href={`tel:${sponsorshipContact.phone}`}
-              className="flex items-center text-primary-600 hover:text-primary-700 font-semibold"
-            >
-              <Phone className="w-5 h-5 mr-2" />
-              {sponsorshipContact.phone}
-            </a>
+            <button onClick={() => setShowContactModal(true)} className="btn btn-outline-crimson">
+              Talk to Us
+            </button>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Contact Modal */}
+      {showContactModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="rounded-2xl shadow-2xl w-full max-w-md"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <h2 className="text-xl font-bold font-serif" style={{ color: 'var(--text)', letterSpacing: '-0.01em' }}>Sponsorship Inquiry</h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>We'll get back to you shortly</p>
+              </div>
+              <button onClick={() => { setShowContactModal(false); setSent(false); setSendError(''); }}
+                className="p-2 rounded-xl hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              {sent ? (
+                <div className="text-center py-6">
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(34,197,94,0.1)' }}>
+                    <svg className="w-7 h-7 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text)' }}>Message Sent!</h3>
+                  <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>Thank you for your interest. We'll be in touch soon.</p>
+                  <button onClick={() => { setShowContactModal(false); setSent(false); }}
+                    className="text-sm font-medium hover:underline" style={{ color: '#C9A84C' }}>Close</button>
+                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Your Name</label>
+                    <input type="text" required value={contactForm.name}
+                      onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full px-4 py-2.5 border rounded-xl text-sm"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                      placeholder="Full name" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Email Address</label>
+                    <input type="email" required value={contactForm.email}
+                      onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                      className="w-full px-4 py-2.5 border rounded-xl text-sm"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                      placeholder="you@example.com" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Message</label>
+                    <textarea rows={4} required value={contactForm.message}
+                      onChange={e => setContactForm(f => ({ ...f, message: e.target.value }))}
+                      className="w-full px-4 py-2.5 border rounded-xl text-sm resize-none"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-alt)', color: 'var(--text)' }}
+                      placeholder="Tell us about your business and sponsorship interest..." />
+                  </div>
+                  {sendError && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm">{sendError}</div>
+                  )}
+                  <button type="submit" disabled={sending}
+                    className="btn btn-primary w-full flex items-center justify-center disabled:opacity-60">
+                    <Send className="w-4 h-4 mr-2" />{sending ? 'Sending...' : 'Send Message'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

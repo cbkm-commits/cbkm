@@ -8,7 +8,7 @@ module.exports = async (req, res) => {
     eventName, eventDate, eventLocation,
     numberOfTickets, adults, kidsAbove6, kidsBelow6,
     numberOfParticipants, category, performanceDetails,
-    guidelinesUrl,
+    guidelinesUrl, adultTicketPrice, kidsAbove6TicketPrice,
   } = req.body || {};
 
   if (!email || !name || !eventName) {
@@ -44,6 +44,8 @@ module.exports = async (req, res) => {
       timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric',
     });
 
+    const totalAmount = ((adults || 0) * (adultTicketPrice || 0)) + ((kidsAbove6 || 0) * (kidsAbove6TicketPrice || 0));
+
     let body = emailCfg?.body || `Dear ${name}, thank you for registering for ${eventName}.`;
     body = body
       .replace(/\{\{name\}\}/g, name || '')
@@ -58,7 +60,8 @@ module.exports = async (req, res) => {
       .replace(/\{\{kidsBelow6\}\}/g, kidsBelow6 || 0)
       .replace(/\{\{participants\}\}/g, numberOfParticipants || 0)
       .replace(/\{\{category\}\}/g, category || '')
-      .replace(/\{\{performanceDetails\}\}/g, performanceDetails || '');
+      .replace(/\{\{performanceDetails\}\}/g, performanceDetails || '')
+      .replace(/\{\{totalAmount\}\}/g, `$${totalAmount.toFixed(2)}`);
 
     let subject = emailCfg?.subject || `Registration Confirmed – ${eventName}`;
     subject = subject.replace(/\{\{event\}\}/g, eventName || '');
@@ -78,8 +81,8 @@ module.exports = async (req, res) => {
       attachments: [],
     };
 
-    // Fetch and attach the guidelines PDF if provided
-    if (guidelinesUrl) {
+    // Fetch and attach the guidelines PDF for participants only
+    if (guidelinesUrl && type === 'participant') {
       try {
         const pdfResp = await fetch(guidelinesUrl);
         if (pdfResp.ok) {

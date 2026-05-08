@@ -14,7 +14,7 @@ const AdminPortal: React.FC = () => {
       {!isLoggedIn ? (
         <AdminLogin onLogin={handleLogin} />
       ) : (
-        <AdminDashboard />
+        <AdminDashboard onLogout={() => setIsLoggedIn(false)} />
       )}
     </>
   );
