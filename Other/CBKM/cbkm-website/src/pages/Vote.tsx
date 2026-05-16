@@ -21,6 +21,7 @@ export default function VotePage() {
   const [voterToken, setVoterToken] = useState<string | null>(null);
   const [codeValidating, setCodeValidating] = useState(false);
   const [codeError, setCodeError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // Voting state
   const [participants, setParticipants] = useState<Registration[]>([]);
@@ -36,8 +37,13 @@ export default function VotePage() {
     if (!activeEvent) return;
     fetchEventCodesCount(activeEvent.id).then(count => {
       setCodesRequired(count > 0);
+      // Restore saved token for this event
+      if (count > 0) {
+        const saved = sessionStorage.getItem(`cbkm_voter_${activeEvent.id}`);
+        if (saved) setVoterToken(saved);
+      }
     }).catch(() => setCodesRequired(false));
-  }, [activeEvent]);
+  }, [activeEvent?.id]);
 
   const loadVoting = useCallback(async (eventId: string, token: string) => {
     setLoading(true);
@@ -48,9 +54,17 @@ export default function VotePage() {
       ]);
       setParticipants(parts);
       setVotedIds(new Set(voted));
+      setError('');
     } catch { setError('Failed to load performers.'); }
     setLoading(false);
   }, []);
+
+  const handleRefresh = async () => {
+    if (!activeEvent || !voterToken || refreshing) return;
+    setRefreshing(true);
+    await loadVoting(activeEvent.id, voterToken);
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     if (activeEvent && voterToken) loadVoting(activeEvent.id, voterToken);
@@ -65,6 +79,7 @@ export default function VotePage() {
     setCodeError('');
     const valid = await validateEventCode(activeEvent.id, code);
     if (valid) {
+      sessionStorage.setItem(`cbkm_voter_${activeEvent.id}`, code);
       setVoterToken(code);
     } else {
       setCodeError('Invalid code. Please check and try again.');
@@ -86,6 +101,8 @@ export default function VotePage() {
       console.error('castVote error (choice):', err);
       if (err?.code === '23505') {
         setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
+      } else if (err?.code === '42501' || err?.message?.includes('policy')) {
+        setError('This performance is no longer accepting votes. Please refresh to see the latest lineup.');
       } else {
         setError(`Failed to submit vote: ${err?.message || err?.code || 'unknown error'}`);
       }
@@ -107,6 +124,8 @@ export default function VotePage() {
       console.error('castVote error (stars/score):', err);
       if (err?.code === '23505') {
         setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
+      } else if (err?.code === '42501' || err?.message?.includes('policy')) {
+        setError('This performance is no longer accepting votes. Please refresh to see the latest lineup.');
       } else {
         setError(`Failed to submit: ${err?.message || err?.code || 'unknown error'}`);
       }
@@ -274,11 +293,21 @@ export default function VotePage() {
   );
   const allCategoriesVoted = categories.every(c => votedCategories.has(c));
 
+  const RefreshBtn = () => (
+    <button onClick={handleRefresh} disabled={refreshing}
+      style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 100, padding: '5px 14px', fontSize: 12, fontWeight: 600, color: '#C9943A', cursor: refreshing ? 'default' : 'pointer', opacity: refreshing ? 0.5 : 1, fontFamily: 'inherit' }}>
+      {refreshing ? '↻ Refreshing...' : '↻ Refresh'}
+    </button>
+  );
+
   return (
     <div style={s.page}>
       <header style={s.header}>
         <div style={s.logo}>CBKM <span style={{ color: '#F5EDD8' }}>·</span> Vote</div>
-        <LiveBadge />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <RefreshBtn />
+          <LiveBadge />
+        </div>
       </header>
 
       <main style={s.main}>

@@ -1,15 +1,17 @@
 import { supabase } from '../supabase';
 
-const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ALPHA_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const NUMERIC_CHARS = '0123456789';
 
-function randomCode(len = 6): string {
+function randomCode(len = 6, type: 'numeric' | 'alphanumeric' = 'numeric'): string {
+  const chars = type === 'numeric' ? NUMERIC_CHARS : ALPHA_CHARS;
   const arr = new Uint8Array(len);
   crypto.getRandomValues(arr);
-  return Array.from(arr, b => CHARS[b % CHARS.length]).join('');
+  return Array.from(arr, b => chars[b % chars.length]).join('');
 }
 
-export const generateEventCodes = async (eventId: string, count: number): Promise<void> => {
-  const rows = Array.from({ length: count }, () => ({ event_id: eventId, code: randomCode() }));
+export const generateEventCodes = async (eventId: string, count: number, type: 'numeric' | 'alphanumeric' = 'numeric'): Promise<void> => {
+  const rows = Array.from({ length: count }, () => ({ event_id: eventId, code: randomCode(6, type) }));
   for (let i = 0; i < rows.length; i += 500) {
     const { error } = await supabase
       .from('event_codes')

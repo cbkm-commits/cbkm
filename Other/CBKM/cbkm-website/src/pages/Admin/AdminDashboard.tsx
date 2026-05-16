@@ -632,6 +632,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     // Attendee codes state
     const [codesCount, setCodesCount] = useState(0);
     const [generateCount, setGenerateCount] = useState(350);
+    const [codeType, setCodeType] = useState<'numeric' | 'alphanumeric'>('numeric');
     const [codesGenerating, setCodesGenerating] = useState(false);
 
     const selectedEvent = events.find(e => e.id === selectedEventId);
@@ -659,7 +660,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       setCodesGenerating(true);
       try {
         const { generateEventCodes, fetchEventCodesCount } = await import('../../lib/db/eventCodes');
-        await generateEventCodes(selectedEventId, generateCount);
+        await generateEventCodes(selectedEventId, generateCount, codeType);
         const count = await fetchEventCodesCount(selectedEventId);
         setCodesCount(count);
         showToast(`${generateCount} codes generated`);
@@ -824,13 +825,21 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
               <label className="text-xs text-gray-500 whitespace-nowrap">Generate</label>
               <input type="number" min={1} max={1000} value={generateCount}
                 onChange={e => setGenerateCount(Math.max(1, Math.min(1000, Number(e.target.value))))}
-                className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-primary-500" />
+                className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-primary-500" />
               <label className="text-xs text-gray-500">codes</label>
+            </div>
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+              {(['numeric', 'alphanumeric'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setCodeType(t)}
+                  className={`px-3 py-1.5 transition-colors ${codeType === t ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {t === 'numeric' ? '0–9 Numeric' : 'A–Z Alphanumeric'}
+                </button>
+              ))}
             </div>
             <button onClick={handleGenerateCodes} disabled={codesGenerating}
               className="px-4 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium disabled:opacity-60 whitespace-nowrap">
@@ -839,7 +848,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
           </div>
           {codesCount > 0 && (
             <p className="text-xs text-gray-400 mt-2">
-              Codes are 6-character alphanumeric. Attendees enter their code at <span className="font-mono">/vote</span> before voting.
+              Codes are 6-digit {codeType === 'numeric' ? 'numeric' : 'alphanumeric'}. Attendees enter their code at <span className="font-mono">/vote</span> before voting.
             </p>
           )}
         </div>
