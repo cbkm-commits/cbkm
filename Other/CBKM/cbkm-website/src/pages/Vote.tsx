@@ -162,6 +162,11 @@ export default function VotePage() {
   }
 
   const votingType = activeEvent.votingType || 'choice';
+  const df = activeEvent.votingDisplayFields ?? {};
+  const showName = df.name !== false;
+  const showNumber = df.number !== false;
+  const showGroupCategory = df.groupCategory !== false;
+  const showPerformanceCategory = df.performanceCategory !== false;
 
   // ── Codes loading ──────────────────────────────────────────────────────────
   if (codesRequired === null) {
@@ -315,7 +320,7 @@ export default function VotePage() {
             <div key={cat} style={{ marginBottom: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, fontWeight: 700, color: catVoted ? '#4CAF7D' : '#C9943A' }}>{cat}</span>
+                  {showGroupCategory && <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 17, fontWeight: 700, color: catVoted ? '#4CAF7D' : '#C9943A' }}>{cat}</span>}
                   {catVoted && <span style={{ fontSize: 12, color: '#4CAF7D', background: 'rgba(76,175,61,0.1)', border: '1px solid rgba(76,175,61,0.3)', borderRadius: 100, padding: '2px 10px' }}>✓ Voted</span>}
                 </div>
                 {!catVoted && (
@@ -341,10 +346,10 @@ export default function VotePage() {
                         opacity: catVoted && !isVoted ? 0.5 : 1,
                       }}>
                       <div style={{ width: 42, height: 42, borderRadius: '50%', background: isVoted ? 'rgba(76,175,61,0.3)' : 'linear-gradient(135deg,#C9943A,#E8C07A)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 16, fontWeight: 700, color: isVoted ? '#4CAF7D' : '#0D0D0D' }}>
-                        {isVoted ? '✓' : (p.participantNumber || p.name.charAt(0))}
+                        {isVoted ? '✓' : (showNumber && p.participantNumber ? p.participantNumber : showName ? p.name.charAt(0) : '?')}
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#F5EDD8', marginBottom: 2 }}>{p.name}</div>
-                      {p.participantNumber && <div style={{ fontSize: 11, color: '#C9943A' }}>#{p.participantNumber}</div>}
+                      {showName && <div style={{ fontWeight: 700, fontSize: 14, color: '#F5EDD8', marginBottom: 2 }}>{p.name}</div>}
+                      {showNumber && p.participantNumber && <div style={{ fontSize: 11, color: '#C9943A' }}>#{p.participantNumber}</div>}
                       {isSelected && !isVoted && <div style={{ marginTop: 6, fontSize: 11, color: '#C9943A', fontWeight: 600 }}>✓ Selected</div>}
                       {isVoted && <div style={{ marginTop: 6, fontSize: 11, color: '#4CAF7D', fontWeight: 600 }}>Voted</div>}
                     </div>
@@ -372,11 +377,11 @@ export default function VotePage() {
                   borderRadius: 16, padding: '20px 16px', textAlign: 'center', opacity: isVoted ? 0.8 : 1,
                 }}>
                   <div style={{ width: 44, height: 44, borderRadius: '50%', background: isVoted ? 'rgba(76,175,61,0.3)' : 'linear-gradient(135deg,#C9943A,#E8C07A)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 16, fontWeight: 700, color: isVoted ? '#4CAF7D' : '#0D0D0D' }}>
-                    {isVoted ? '✓' : (p.participantNumber || p.name.charAt(0))}
+                    {isVoted ? '✓' : (showNumber && p.participantNumber ? p.participantNumber : showName ? p.name.charAt(0) : '?')}
                   </div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: '#F5EDD8', marginBottom: 2 }}>{p.name}</div>
-                  {p.category && <div style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>{p.category}</div>}
-                  {p.participantNumber && <div style={{ fontSize: 11, color: '#C9943A', marginBottom: 10 }}>#{p.participantNumber}</div>}
+                  {showName && <div style={{ fontWeight: 700, fontSize: 14, color: '#F5EDD8', marginBottom: 2 }}>{p.name}</div>}
+                  {showPerformanceCategory && p.category && <div style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>{p.category}</div>}
+                  {showNumber && p.participantNumber && <div style={{ fontSize: 11, color: '#C9943A', marginBottom: 10 }}>#{p.participantNumber}</div>}
 
                   {votingType === 'stars' && !isVoted && (
                     <>

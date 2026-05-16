@@ -1534,6 +1534,29 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                       <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${eventData.resultsPublic ? 'translate-x-5' : 'translate-x-0'}`} />
                     </button>
                   </div>
+                  <div className="col-span-2">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Voting Screen — Visible Fields</p>
+                    <div className="space-y-2">
+                      {([
+                        { key: 'name', label: 'Participant Name' },
+                        { key: 'number', label: 'Participant Number' },
+                        { key: 'groupCategory', label: 'Group Category' },
+                        { key: 'performanceCategory', label: 'Performance Category' },
+                      ] as { key: keyof NonNullable<Event['votingDisplayFields']>; label: string }[]).map(({ key, label }) => {
+                        const current = eventData.votingDisplayFields?.[key] !== false;
+                        return (
+                          <div key={key} className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-2.5">
+                            <span className="text-sm text-gray-700">{label}</span>
+                            <button type="button"
+                              onClick={() => setEventData(prev => ({ ...prev, votingDisplayFields: { name: true, number: true, groupCategory: true, performanceCategory: true, ...(prev.votingDisplayFields || {}), [key]: !current } }))}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${current ? 'bg-primary-600' : 'bg-gray-200'}`}>
+                              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${current ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

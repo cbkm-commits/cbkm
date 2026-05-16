@@ -15,6 +15,7 @@ const toEvent = (r: any): Event => ({
   resultsPublic: r.results_public ?? false,
   adultTicketPrice: r.adult_ticket_price ?? 0,
   kidsAbove6TicketPrice: r.kids_above6_ticket_price ?? 0,
+  votingDisplayFields: r.voting_display_fields ?? { name: true, number: true, groupCategory: true, performanceCategory: true },
 });
 
 const toDb = (e: Omit<Event, 'id'>) => ({
@@ -31,6 +32,7 @@ const toDb = (e: Omit<Event, 'id'>) => ({
   results_public: e.resultsPublic ?? false,
   adult_ticket_price: e.adultTicketPrice ?? 0,
   kids_above6_ticket_price: e.kidsAbove6TicketPrice ?? 0,
+  voting_display_fields: e.votingDisplayFields ?? { name: true, number: true, groupCategory: true, performanceCategory: true },
 });
 
 export const fetchEvents = async (): Promise<Event[]> => {
@@ -65,6 +67,7 @@ export const updateEvent = async (id: string, e: Partial<Event>): Promise<void> 
   if (e.resultsPublic !== undefined) updates.results_public = e.resultsPublic;
   if (e.adultTicketPrice !== undefined) updates.adult_ticket_price = e.adultTicketPrice;
   if (e.kidsAbove6TicketPrice !== undefined) updates.kids_above6_ticket_price = e.kidsAbove6TicketPrice;
+  if (e.votingDisplayFields !== undefined) updates.voting_display_fields = e.votingDisplayFields;
   const { error } = await supabase.from('events').update(updates).eq('id', id);
   if (error) throw error;
 };

@@ -18,6 +18,12 @@ export interface Event {
   resultsPublic?: boolean;
   adultTicketPrice?: number;
   kidsAbove6TicketPrice?: number;
+  votingDisplayFields?: {
+    name?: boolean;
+    number?: boolean;
+    groupCategory?: boolean;
+    performanceCategory?: boolean;
+  };
 }
 
 export interface FormField {
