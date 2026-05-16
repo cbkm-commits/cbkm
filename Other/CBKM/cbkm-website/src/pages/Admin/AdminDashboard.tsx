@@ -6,7 +6,7 @@ import {
   Upload, FileText, Settings2, ChevronRight, Mail, Paperclip, Loader, RefreshCw, Eye, EyeOff, Tag, Vote, BarChart2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Event, FormField, Registration, Sponsor, SponsorshipPackage, Blog } from '../../types';
+import { Event, FormField, Registration, Sponsor, SponsorshipPackage, Blog, Vote as VoteRecord } from '../../types';
 import { useSponsorship } from '../../context/SponsorshipContext';
 import { useLogo } from '../../context/LogoContext';
 import { useEvents } from '../../context/EventsContext';
@@ -627,6 +627,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     const [totalVotes, setTotalVotes] = useState(0);
     const [vLoading, setVLoading] = useState(false);
     const [voteParticipants, setVoteParticipants] = useState<Registration[]>([]);
+    const [rawVotes, setRawVotes] = useState<VoteRecord[]>([]);
 
     // Attendee codes state
     const [codesCount, setCodesCount] = useState(0);
@@ -645,6 +646,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         import('../../lib/db/eventCodes').then(m => m.fetchEventCodesCount(selectedEventId)),
       ]).then(([parts, votes, count]) => {
         setVoteParticipants(parts);
+        setRawVotes(votes);
         const computed = computeResults(votes, parts.map(p => ({ id: p.id, name: p.name, category: p.category || '', participantNumber: p.participantNumber || '' })), ev?.votingType || 'choice');
         setResults(computed);
         setTotalVotes(votes.length);
@@ -689,17 +691,52 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       } catch { showToast('Failed to clear codes', 'error'); }
     };
 
-    const exportCSV = () => {
-      const rows = [['Rank', 'Participant #', 'Name', 'Category', 'Votes', selectedEvent?.votingType === 'choice' ? 'Percent (%)' : 'Avg Score']];
-      results.forEach((r, i) => rows.push([
-        String(i + 1), r.registration.participantNumber, r.registration.name, r.registration.category,
-        String(r.totalVotes), selectedEvent?.votingType === 'choice' ? String(r.percent) : String(r.avgScore),
-      ]));
-      const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const downloadCSV = (rows: string[][], filename: string) => {
+      const csv = rows.map(r => r.map(v => `"${String(v)}"`).join(',')).join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `voting-results-${selectedEvent?.name || selectedEventId}.csv`; a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `${filename}.csv`; a.click();
       URL.revokeObjectURL(url);
+    };
+
+    const toRubricScore = (avgScore: number, percent: number): number => {
+      const type = selectedEvent?.votingType || 'choice';
+      if (type === 'choice') return Math.round((percent / 100) * 30 * 10) / 10;
+      const max = type === 'stars' ? 5 : 10;
+      return Math.round((avgScore / max) * 30 * 10) / 10;
+    };
+
+    const exportCSV = () => {
+      const type = selectedEvent?.votingType || 'choice';
+      const scoreHeader = type === 'choice' ? 'Percent (%)' : 'Avg Score';
+      const rows = [['Rank', 'Participant #', 'Name', 'Category', 'Votes', scoreHeader, 'Rubric Score (/30)']];
+      results.forEach((r, i) => rows.push([
+        String(i + 1), r.registration.participantNumber, r.registration.name, r.registration.category,
+        String(r.totalVotes),
+        type === 'choice' ? String(r.percent) : String(r.avgScore),
+        String(toRubricScore(r.avgScore, r.percent)),
+      ]));
+      downloadCSV(rows, `voting-results-${selectedEvent?.name || selectedEventId}`);
+    };
+
+    const exportPerformanceCSV = (r: VoteResult) => {
+      const type = selectedEvent?.votingType || 'choice';
+      const max = type === 'stars' ? 5 : 10;
+      const perfVotes = rawVotes.filter(v => v.registrationId === r.registration.id);
+      const rows: string[][] = [['Vote #', 'Score', 'Rubric Score (/30)']];
+      let idx = 1;
+      perfVotes.forEach(v => {
+        try {
+          const val = JSON.parse(v.voteValue);
+          if (typeof val === 'number') {
+            rows.push([String(idx++), String(val), String(Math.round((val / max) * 30 * 10) / 10)]);
+          }
+        } catch {}
+      });
+      rows.push(['', 'Avg Score', String(r.avgScore)]);
+      rows.push(['', 'Rubric Score (/30)', String(toRubricScore(r.avgScore, r.percent))]);
+      const name = `${r.registration.participantNumber ? `#${r.registration.participantNumber}-` : ''}${r.registration.name}`;
+      downloadCSV(rows, `votes-${name}`);
     };
 
     const toggleResultsPublic = async () => {
@@ -849,11 +886,20 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                     {r.registration.participantNumber && <span className="ml-2 text-xs text-primary-600 font-mono">#{r.registration.participantNumber}</span>}
                     {r.registration.category && <span className="ml-2 text-xs text-gray-400">{r.registration.category}</span>}
                   </span>
-                  <span className="text-xs text-gray-500">
-                    {selectedEvent?.votingType === 'choice'
-                      ? `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''} · ${r.percent}%`
-                      : `avg ${r.avgScore}${selectedEvent?.votingType === 'stars' ? '★' : '/10'} · ${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-500">
+                      {selectedEvent?.votingType === 'choice'
+                        ? `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''} · ${r.percent}% · ${toRubricScore(r.avgScore, r.percent)}/30`
+                        : `avg ${r.avgScore}${selectedEvent?.votingType === 'stars' ? '★' : '/10'} · ${toRubricScore(r.avgScore, r.percent)}/30 · ${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`}
+                    </span>
+                    {selectedEvent?.votingType !== 'choice' && (
+                      <button onClick={() => exportPerformanceCSV(r)}
+                        className="text-xs text-gray-400 hover:text-primary-600 flex items-center gap-0.5"
+                        title="Download votes for this performance">
+                        <Download className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="bg-gray-100 rounded-full h-2.5 overflow-hidden">
                   <div className={`h-full rounded-full transition-all ${i === 0 ? 'bg-yellow-400' : 'bg-gray-400'}`}
