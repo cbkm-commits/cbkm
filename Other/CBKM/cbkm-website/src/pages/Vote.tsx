@@ -83,10 +83,11 @@ export default function VotePage() {
       await castVote(activeEvent.id, performerId, voterToken, JSON.stringify(performerId));
       setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
     } catch (err: any) {
+      console.error('castVote error (choice):', err);
       if (err?.code === '23505') {
         setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
       } else {
-        setError('Failed to submit vote. Please try again.');
+        setError(`Failed to submit vote: ${err?.message || err?.code || 'unknown error'}`);
       }
     }
     setSubmittingFor(null);
@@ -103,10 +104,11 @@ export default function VotePage() {
       await castVote(activeEvent.id, performerId, voterToken, JSON.stringify(score));
       setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
     } catch (err: any) {
+      console.error('castVote error (stars/score):', err);
       if (err?.code === '23505') {
         setVotedIds(prev => { const s = new Set(Array.from(prev)); s.add(performerId); return s; });
       } else {
-        setError('Failed to submit. Please try again.');
+        setError(`Failed to submit: ${err?.message || err?.code || 'unknown error'}`);
       }
     }
     setSubmittingFor(null);
