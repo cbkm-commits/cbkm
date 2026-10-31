@@ -275,7 +275,7 @@ const EventDetail: React.FC = () => {
                   </button>
                   <button onClick={() => { setRegistrationType('participant'); setEtransferSameAsEmail(null); }}
                     className={`flex flex-col items-center p-3 rounded-xl border-2 text-sm font-medium transition-all ${registrationType === 'participant' ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                    <UserPlus className="w-5 h-5 mb-1" />Register
+                    <UserPlus className="w-5 h-5 mb-1" />Program Registration
                   </button>
                 </div>
 
@@ -291,7 +291,7 @@ const EventDetail: React.FC = () => {
                     <p className="text-sm text-gray-500">
                       {registrationType === 'attendee'
                         ? 'Ticket registration for this event is currently closed.'
-                        : 'Participant registration for this event is currently closed.'}
+                        : 'Program registration for this event is currently closed.'}
                     </p>
                   </div>
                 ) : registrationType === 'attendee' && event.attendeeFormMode === 'link' && event.attendeeLinkUrl ? (

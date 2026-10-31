@@ -250,7 +250,7 @@ const Events: React.FC = () => {
                           background: registrationType === 'participant' ? 'rgba(139,26,26,0.07)' : 'transparent',
                         }}>
                         <UserPlus className="w-6 h-6 mx-auto mb-2" style={{ color: '#8B1A1A' }} />
-                        <h3 className="font-semibold" style={{ color: 'var(--text)' }}>Register</h3>
+                        <h3 className="font-semibold" style={{ color: 'var(--text)' }}>Program Registration</h3>
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Take part in performances</p>
                       </button>
                     </div>
