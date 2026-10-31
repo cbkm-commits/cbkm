@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { useLogo } from '../../context/LogoContext';
+import { getSetting } from '../../lib/db/settings';
 
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [votePageEnabled, setVotePageEnabled] = useState(false);
   const { logoUrl } = useLogo();
   const location = useLocation();
 
@@ -15,7 +17,11 @@ const Header: React.FC = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const navigation = [
+  useEffect(() => {
+    getSetting('vote_page_enabled').then(v => setVotePageEnabled(v === 'true')).catch(() => {});
+  }, []);
+
+  const allNavigation = [
     { name: 'Home', href: '/' },
     { name: 'Events', href: '/events' },
     { name: 'Sponsorship', href: '/sponsorship' },
@@ -25,6 +31,8 @@ const Header: React.FC = () => {
     { name: 'About Us', href: '/about' },
     { name: 'Vote', href: '/vote' },
   ];
+
+  const navigation = allNavigation.filter(item => item.href !== '/vote' || votePageEnabled);
 
   const isActiveLink = (href: string) => location.pathname === href;
 

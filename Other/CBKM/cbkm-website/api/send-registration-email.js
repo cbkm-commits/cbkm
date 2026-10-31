@@ -4,12 +4,27 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const {
+    registrationId,
     type, name, email, phone,
     eventName, eventDate, eventLocation,
     numberOfTickets, adults, kidsAbove6, kidsBelow6,
     numberOfParticipants, category, performanceDetails,
     guidelinesUrl, adultTicketPrice, kidsAbove6TicketPrice,
   } = req.body || {};
+
+  const updateEmailStatus = async (status) => {
+    if (!registrationId || !supabaseUrl || !supabaseKey) return;
+    await fetch(`${supabaseUrl}/rest/v1/registrations?id=eq.${registrationId}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ email_status: status }),
+    }).catch(() => {});
+  };
 
   if (!email || !name || !eventName) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -99,9 +114,12 @@ module.exports = async (req, res) => {
     }
 
     await transporter.sendMail(mailOptions);
+    await updateEmailStatus('sent');
     return res.status(200).json({ sent: true });
   } catch (err) {
-    console.error('send-registration-email error:', err);
-    return res.status(500).json({ error: 'Failed to send email' });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('send-registration-email error:', msg);
+    await updateEmailStatus('failed');
+    return res.status(500).json({ error: 'Failed to send email', detail: msg });
   }
 };

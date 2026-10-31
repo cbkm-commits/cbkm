@@ -8,6 +8,8 @@ export interface Event {
   location: string;
   guidelinesUrl?: string;
   attendeeForm?: FormField[];
+  attendeeFormMode?: 'form' | 'link';
+  attendeeLinkUrl?: string;
   participantForm?: FormField[];
   hidden?: boolean;
   attendeeFormPaused?: boolean;
@@ -60,6 +62,8 @@ export interface Registration {
   performanceFinalized?: boolean;
   participantNumber?: string;
   votingEnabled?: boolean;
+  emailStatus?: 'sent' | 'failed' | 'not_sent';
+  sortOrder?: number;
 }
 
 export interface Vote {

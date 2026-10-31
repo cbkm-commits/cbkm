@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Calendar, MapPin, Users, UserPlus, X, ChevronRight, ArrowRight } from 'lucide-react';
+import { Calendar, MapPin, Users, UserPlus, X, ChevronRight, ArrowRight, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toSlug } from './EventDetail';
 import { useEvents } from '../context/EventsContext';
@@ -10,7 +10,10 @@ import { createRegistration } from '../lib/db/registrations';
 const Events: React.FC = () => {
   const navigate = useNavigate();
   const { events: allEvents } = useEvents();
-  const events = allEvents.filter(e => !e.hidden);
+  const visibleEvents = allEvents.filter(e => !e.hidden);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const events = visibleEvents.filter(e => new Date(e.date) >= today);
+  const pastEvents = visibleEvents.filter(e => new Date(e.date) < today);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [registrationType, setRegistrationType] = useState<'attendee' | 'participant'>('attendee');
   const [viewingPoster, setViewingPoster] = useState(false);
@@ -115,6 +118,45 @@ const Events: React.FC = () => {
               <p>No upcoming events. Check back soon!</p>
             </div>
           )}
+
+          {pastEvents.length > 0 && (
+            <>
+              <div className="mt-8 mb-6">
+                <h2 className="text-2xl font-bold font-serif" style={{ color: 'var(--text)', opacity: 0.7 }}>Past Events</h2>
+                <div className="divider" style={{ marginTop: '0.75rem' }} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 opacity-70">
+                {pastEvents.map((event) => (
+                  <div key={event.id} className="rounded-2xl overflow-hidden"
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', filter: 'grayscale(0.5)' }}>
+                    <div className="h-48 overflow-hidden relative" style={{ background: 'linear-gradient(135deg, rgba(120,120,120,0.2), rgba(80,80,80,0.2))' }}>
+                      {event.image && !event.image.includes('/api/placeholder') ? (
+                        <img src={event.image} alt={event.name} className="w-full h-full object-cover" style={{ filter: 'grayscale(0.4)' }} />
+                      ) : null}
+                    </div>
+                    <div className="p-6">
+                      <div className="flex items-center text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+                        <Calendar className="w-4 h-4 mr-1.5 flex-shrink-0" style={{ color: '#888' }} />
+                        {formatEventDate(event.date)}
+                      </div>
+                      <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--text)' }}>{event.name}</h3>
+                      <div className="flex items-center text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                        <MapPin className="w-4 h-4 mr-1.5 flex-shrink-0" style={{ color: '#888' }} />
+                        {event.location}
+                      </div>
+                      <p className="mb-5 line-clamp-4 text-sm leading-[1.8]" style={{ color: 'var(--text-muted)' }}>{event.description}</p>
+                      <button
+                        onClick={() => navigate(`/events/${toSlug(event)}`)}
+                        className="w-full flex items-center justify-center px-4 py-2 rounded-xl border text-sm font-medium transition-colors"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                        <ChevronRight className="w-4 h-4 mr-1" />View Details
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -214,6 +256,15 @@ const Events: React.FC = () => {
                     </div>
                   </div>
 
+                  {registrationType === 'attendee' && selectedEvent.attendeeFormMode === 'link' && selectedEvent.attendeeLinkUrl ? (
+                    <div className="text-center py-4">
+                      <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>Tickets for this event are sold through our online ticketing page.</p>
+                      <a href={selectedEvent.attendeeLinkUrl} target="_blank" rel="noopener noreferrer"
+                        className="btn btn-primary inline-flex items-center">
+                        Buy Tickets<ExternalLink className="w-4 h-4 ml-2" />
+                      </a>
+                    </div>
+                  ) : (
                   <form ref={formRef} onSubmit={handleRegistration} className="space-y-4">
                     {(registrationType === 'attendee'
                       ? selectedEvent.attendeeForm
@@ -257,6 +308,7 @@ const Events: React.FC = () => {
                       </button>
                     </div>
                   </form>
+                  )}
                 </>
               )}
             </div>

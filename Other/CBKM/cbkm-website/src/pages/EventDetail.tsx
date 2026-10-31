@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Users, UserPlus, ArrowLeft, X, FileText, Download } from 'lucide-react';
+import { Calendar, MapPin, Users, UserPlus, ArrowLeft, X, FileText, Download, Ticket, ExternalLink } from 'lucide-react';
 import { useEvents } from '../context/EventsContext';
 import { createRegistration } from '../lib/db/registrations';
 import { Event } from '../types';
@@ -22,6 +22,8 @@ const EventDetail: React.FC = () => {
   const [regError, setRegError] = useState('');
   const [viewingPoster, setViewingPoster] = useState(false);
   const [etransferSameAsEmail, setEtransferSameAsEmail] = useState<boolean | null>(null);
+  const [lastSubmittedTotal, setLastSubmittedTotal] = useState<number>(0);
+  const [lastSubmittedIsAttendee, setLastSubmittedIsAttendee] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   if (!event) {
@@ -82,7 +84,11 @@ const EventDetail: React.FC = () => {
         }
       }
 
-      await createRegistration({
+      const adultsCount = Number(g('adults')) || 0;
+      const kidsAbove6Count = Number(g('kidsAbove6')) || 0;
+      const total = adultsCount * (event.adultTicketPrice || 0) + kidsAbove6Count * (event.kidsAbove6TicketPrice || 0);
+
+      const newReg = await createRegistration({
         eventId: event.id,
         type: registrationType,
         name,
@@ -90,8 +96,8 @@ const EventDetail: React.FC = () => {
         phone,
         address: g('address'),
         numberOfTickets: Number(g('numberOfTickets')) || 0,
-        adults: Number(g('adults')) || 0,
-        kidsAbove6: Number(g('kidsAbove6')) || 0,
+        adults: adultsCount,
+        kidsAbove6: kidsAbove6Count,
         kidsBelow6: Number(g('kidsBelow6')) || 0,
         numberOfParticipants: Number(g('numberOfParticipants')) || 0,
         category: g('category'),
@@ -100,11 +106,13 @@ const EventDetail: React.FC = () => {
         customFields,
         registrationDate: new Date().toISOString(),
       });
-      // Send confirmation email — non-blocking
+
+      // Send email — serverless function updates email_status directly in DB
       fetch('/api/send-registration-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          registrationId: newReg.id,
           type: registrationType,
           name,
           email,
@@ -113,8 +121,8 @@ const EventDetail: React.FC = () => {
           eventDate: event.date,
           eventLocation: event.location,
           numberOfTickets: Number(g('numberOfTickets')) || 0,
-          adults: Number(g('adults')) || 0,
-          kidsAbove6: Number(g('kidsAbove6')) || 0,
+          adults: adultsCount,
+          kidsAbove6: kidsAbove6Count,
           kidsBelow6: Number(g('kidsBelow6')) || 0,
           numberOfParticipants: Number(g('numberOfParticipants')) || 0,
           category: g('category'),
@@ -124,6 +132,9 @@ const EventDetail: React.FC = () => {
           kidsAbove6TicketPrice: event.kidsAbove6TicketPrice || 0,
         }),
       }).catch(() => {});
+
+      setLastSubmittedIsAttendee(registrationType === 'attendee');
+      setLastSubmittedTotal(total);
       // Submit attendee data to Google Sheet — non-blocking
       if (registrationType === 'attendee') {
         const sheetFields = (event.attendeeForm || []).map(field => {
@@ -150,6 +161,7 @@ const EventDetail: React.FC = () => {
   const currentFields = registrationType === 'attendee' ? event.attendeeForm : event.participantForm;
   const hasPoster = event.poster && !event.poster.includes('/api/placeholder');
   const hasImage = event.image && !event.image.includes('/api/placeholder');
+  const isPastEvent = new Date(event.date) < new Date(new Date().toDateString());
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -206,7 +218,15 @@ const EventDetail: React.FC = () => {
 
           {/* Registration Card */}
           <div className="bg-white rounded-2xl shadow-sm p-6 flex flex-col">
-            {submitted ? (
+            {isPastEvent ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+                <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <Calendar className="w-7 h-7 text-gray-400" />
+                </div>
+                <h3 className="text-base font-semibold text-gray-700 mb-2">This Event Has Ended</h3>
+                <p className="text-sm text-gray-500">Registration is no longer available for this event.</p>
+              </div>
+            ) : submitted ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
                   <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -216,8 +236,29 @@ const EventDetail: React.FC = () => {
                 <h3 className="text-xl font-bold text-gray-900 mb-2">
                   {registrationType === 'attendee' ? 'Ticket Registration Submitted!' : 'Participant Registration Submitted!'}
                 </h3>
-                <p className="text-sm text-gray-500 mb-5">Thank you for registering. We'll be in touch soon.</p>
-                <button onClick={() => { setSubmitted(false); setEtransferSameAsEmail(null); }}
+                <p className="text-sm text-gray-600 mb-3">
+                  Thank you for registering. We are excited to have you join us!
+                </p>
+                {lastSubmittedIsAttendee && ((event.adultTicketPrice || 0) > 0 || (event.kidsAbove6TicketPrice || 0) > 0) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-left text-sm text-amber-900">
+                    {lastSubmittedTotal > 0 ? (
+                      <p>As a next step in the ticketing process, kindly e-transfer the total amount —{' '}
+                        <strong>${lastSubmittedTotal.toFixed(2)}</strong> to{' '}
+                        <a href="mailto:bharathikalaimandram@gmail.com" className="underline font-medium">bharathikalaimandram@gmail.com</a>{' '}
+                        to get your tickets.
+                      </p>
+                    ) : (
+                      <p>As a next step in the ticketing process, kindly e-transfer the total ticket amount to{' '}
+                        <a href="mailto:bharathikalaimandram@gmail.com" className="underline font-medium">bharathikalaimandram@gmail.com</a>{' '}
+                        to get your tickets
+                        {(event.adultTicketPrice || 0) > 0 && ` (Adults: $${event.adultTicketPrice}`}
+                        {(event.kidsAbove6TicketPrice || 0) > 0 && `, Kids above 6: $${event.kidsAbove6TicketPrice}`}
+                        {((event.adultTicketPrice || 0) > 0 || (event.kidsAbove6TicketPrice || 0) > 0) && ' per person)'}.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => { setSubmitted(false); setEtransferSameAsEmail(null); setLastSubmittedTotal(0); setLastSubmittedIsAttendee(false); }}
                   className="text-primary-600 hover:underline text-sm font-medium">
                   Register another person
                 </button>
@@ -252,6 +293,18 @@ const EventDetail: React.FC = () => {
                         ? 'Ticket registration for this event is currently closed.'
                         : 'Participant registration for this event is currently closed.'}
                     </p>
+                  </div>
+                ) : registrationType === 'attendee' && event.attendeeFormMode === 'link' && event.attendeeLinkUrl ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+                    <div className="w-14 h-14 bg-primary-50 rounded-full flex items-center justify-center mb-4">
+                      <Ticket className="w-7 h-7 text-primary-600" />
+                    </div>
+                    <h3 className="text-base font-semibold text-gray-800 mb-1">Get Your Tickets</h3>
+                    <p className="text-sm text-gray-500 mb-5">Tickets for this event are sold through our online ticketing page.</p>
+                    <a href={event.attendeeLinkUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center bg-primary-600 text-white px-6 py-3 rounded-xl hover:bg-primary-700 transition-colors font-semibold text-sm">
+                      Buy Tickets<ExternalLink className="w-4 h-4 ml-2" />
+                    </a>
                   </div>
                 ) : (
                 <form ref={formRef} onSubmit={handleRegistration} className="space-y-3 flex-1">

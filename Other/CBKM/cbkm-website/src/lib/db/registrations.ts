@@ -14,6 +14,8 @@ const toReg = (r: any): Registration => ({
   performanceFinalized: r.performance_finalized ?? false,
   participantNumber: r.participant_number ?? '',
   votingEnabled: r.voting_enabled ?? false,
+  emailStatus: r.email_status ?? 'not_sent',
+  sortOrder: r.sort_order ?? undefined,
 });
 
 export const fetchRegistrations = async (): Promise<Registration[]> => {
@@ -59,6 +61,8 @@ export const updateRegistration = async (id: string, updates: Partial<Registrati
   if (updates.performanceFinalized !== undefined) patch.performance_finalized = updates.performanceFinalized;
   if (updates.participantNumber !== undefined) patch.participant_number = updates.participantNumber;
   if (updates.votingEnabled !== undefined) patch.voting_enabled = updates.votingEnabled;
+  if (updates.emailStatus !== undefined) patch.email_status = updates.emailStatus;
+  if (updates.sortOrder !== undefined) patch.sort_order = updates.sortOrder;
   const { data, error } = await supabase.from('registrations').update(patch).eq('id', id).select().single();
   if (error) throw error;
   return toReg(data);

@@ -1,11 +1,15 @@
 import { supabase } from '../supabase';
 import { Event } from '../../types';
 
+export const DEFAULT_TICKET_LINK = 'https://rallyvio.com/o/cbkm';
+
 const toEvent = (r: any): Event => ({
   id: r.id, name: r.name, description: r.description,
   date: r.date, location: r.location, image: r.image, poster: r.poster,
   guidelinesUrl: r.guidelines_url || '',
   attendeeForm: r.attendee_form || [], participantForm: r.participant_form || [],
+  attendeeFormMode: r.attendee_form_mode === 'link' ? 'link' : 'form',
+  attendeeLinkUrl: r.attendee_link_url || '',
   hidden: r.hidden ?? false,
   attendeeFormPaused: r.attendee_form_paused ?? false,
   participantFormPaused: r.participant_form_paused ?? false,
@@ -23,6 +27,8 @@ const toDb = (e: Omit<Event, 'id'>) => ({
   location: e.location || '', image: e.image || '', poster: e.poster || '',
   guidelines_url: e.guidelinesUrl || '',
   attendee_form: e.attendeeForm || [], participant_form: e.participantForm || [],
+  attendee_form_mode: e.attendeeFormMode ?? 'form',
+  attendee_link_url: (e.attendeeLinkUrl || '').trim(),
   hidden: e.hidden ?? false,
   attendee_form_paused: e.attendeeFormPaused ?? false,
   participant_form_paused: e.participantFormPaused ?? false,
@@ -58,6 +64,8 @@ export const updateEvent = async (id: string, e: Partial<Event>): Promise<void> 
   if (e.guidelinesUrl !== undefined) updates.guidelines_url = e.guidelinesUrl;
   if (e.attendeeForm !== undefined) updates.attendee_form = e.attendeeForm;
   if (e.participantForm !== undefined) updates.participant_form = e.participantForm;
+  if (e.attendeeFormMode !== undefined) updates.attendee_form_mode = e.attendeeFormMode;
+  if (e.attendeeLinkUrl !== undefined) updates.attendee_link_url = e.attendeeLinkUrl.trim();
   if (e.hidden !== undefined) updates.hidden = e.hidden;
   if (e.attendeeFormPaused !== undefined) updates.attendee_form_paused = e.attendeeFormPaused;
   if (e.participantFormPaused !== undefined) updates.participant_form_paused = e.participantFormPaused;

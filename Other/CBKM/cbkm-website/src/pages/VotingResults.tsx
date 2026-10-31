@@ -4,6 +4,157 @@ import { fetchVotingParticipants } from '../lib/db/registrations';
 import { fetchVotes, computeResults, VoteResult } from '../lib/db/votes';
 import { formatEventDate } from '../lib/dateUtils';
 
+const GOLD = '#C9943A';
+const GOLD_LIGHT = '#E8C07A';
+const BG = '#0D0D0D';
+const SURFACE = '#161616';
+const SURFACE2 = '#1E1E1E';
+const TEXT = '#F5EDD8';
+const MUTED = '#888';
+const BORDER = 'rgba(255,255,255,0.07)';
+
+function toRubric(r: VoteResult, votingType: string) {
+  if (votingType === 'stars') return ((r.avgScore / 5) * 30).toFixed(1);
+  if (votingType === 'score') return ((r.avgScore / 10) * 30).toFixed(1);
+  return ((r.percent / 100) * 30).toFixed(1);
+}
+
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+function CategorySection({ category, items, votingType, showName, showNumber }: {
+  category: string;
+  items: VoteResult[];
+  votingType: string;
+  showName: boolean;
+  showNumber: boolean;
+}) {
+  const sorted = [...items].sort((a, b) =>
+    votingType === 'choice' ? b.totalVotes - a.totalVotes : b.avgScore - a.avgScore || b.totalVotes - a.totalVotes
+  );
+  const topValue = sorted[0]
+    ? votingType === 'choice' ? sorted[0].percent : sorted[0].avgScore
+    : 1;
+  const totalCatVotes = votingType === 'choice'
+    ? sorted.reduce((s, r) => s + r.totalVotes, 0)
+    : sorted.length > 0 ? sorted[0].totalVotes : 0;
+
+  return (
+    <div style={{ marginBottom: 36 }}>
+      {/* Category header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 3, height: 20, background: `linear-gradient(to bottom, ${GOLD}, ${GOLD_LIGHT})`, borderRadius: 2, flexShrink: 0 }} />
+          <h2 style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: 'clamp(15px,3vw,19px)',
+            fontWeight: 700,
+            color: TEXT,
+            margin: 0,
+            letterSpacing: '0.01em',
+          }}>{category}</h2>
+        </div>
+        <span style={{ fontSize: 12, color: MUTED, whiteSpace: 'nowrap', marginLeft: 12 }}>
+          {sorted.length} performer{sorted.length !== 1 ? 's' : ''}
+          {votingType === 'choice' && ` · ${totalCatVotes} vote${totalCatVotes !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+
+      {/* Performer cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {sorted.map((r, i) => {
+          const isFirst = i === 0;
+          const rawValue = votingType === 'choice' ? r.percent : r.avgScore;
+          const barPct = topValue > 0 ? (rawValue / topValue) * 100 : 0;
+          const rubric = toRubric(r, votingType);
+          const medal = MEDALS[i];
+
+          return (
+            <div key={r.registration.id} style={{
+              background: isFirst
+                ? `linear-gradient(135deg, rgba(201,148,58,0.12) 0%, rgba(201,148,58,0.04) 100%)`
+                : SURFACE2,
+              border: `1px solid ${isFirst ? `rgba(201,148,58,0.35)` : BORDER}`,
+              borderRadius: 14,
+              padding: '14px 18px',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Subtle glow for 1st place */}
+              {isFirst && (
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+                  background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
+                }} />
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                {/* Rank */}
+                <div style={{
+                  width: 32, flexShrink: 0, textAlign: 'center',
+                  fontSize: medal ? 20 : 13,
+                  fontWeight: 700,
+                  color: !medal ? MUTED : undefined,
+                }}>
+                  {medal || `${i + 1}`}
+                </div>
+
+                {/* Name + number */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {showName && (
+                    <div style={{
+                      fontSize: 'clamp(13px,2.5vw,15px)',
+                      fontWeight: isFirst ? 700 : 500,
+                      color: isFirst ? GOLD_LIGHT : TEXT,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {r.registration.name}
+                    </div>
+                  )}
+                  {showNumber && r.registration.participantNumber && (
+                    <div style={{ fontSize: 11, color: GOLD, marginTop: 1, fontWeight: 600 }}>
+                      #{r.registration.participantNumber}
+                    </div>
+                  )}
+                </div>
+
+                {/* Score */}
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: isFirst ? GOLD : TEXT }}>
+                    {votingType === 'choice'
+                      ? `${r.percent}%`
+                      : `${r.avgScore}${votingType === 'stars' ? '★' : '/10'}`}
+                  </div>
+                  <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>
+                    {votingType === 'choice'
+                      ? `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`
+                      : `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`}
+                    {' · '}<span style={{ color: isFirst ? GOLD : '#666' }}>{rubric}/30</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 100, height: 5, overflow: 'hidden', marginLeft: 44 }}>
+                <div style={{
+                  width: `${barPct}%`,
+                  height: '100%',
+                  background: isFirst
+                    ? `linear-gradient(90deg, ${GOLD}, ${GOLD_LIGHT})`
+                    : i === 1 ? 'rgba(192,192,192,0.45)'
+                    : i === 2 ? 'rgba(180,120,60,0.45)'
+                    : 'rgba(201,148,58,0.2)',
+                  borderRadius: 100,
+                  transition: 'width 0.8s ease',
+                }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function VotingResultsPage() {
   const { events } = useEvents();
   const publicEvents = events.filter(e => e.resultsPublic && !e.hidden);
@@ -21,9 +172,15 @@ export default function VotingResultsPage() {
       fetchVotingParticipants(selectedEventId),
       fetchVotes(selectedEventId),
     ]).then(([participants, votes]) => {
-      const computed = computeResults(votes, participants.map(p => ({
-        id: p.id, name: p.name, category: p.category || '', participantNumber: p.participantNumber || '',
-      })), event?.votingType || 'choice');
+      const computed = computeResults(
+        votes,
+        participants.map(p => ({
+          id: p.id, name: p.name,
+          category: p.category || '',
+          participantNumber: p.participantNumber || '',
+        })),
+        event?.votingType || 'choice'
+      );
       setResults(computed);
       setTotalVotes(votes.length);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -35,108 +192,125 @@ export default function VotingResultsPage() {
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const votingType = selectedEvent?.votingType || 'choice';
+  const df = selectedEvent?.votingDisplayFields ?? {};
+  const showName = df.name !== false;
+  const showNumber = df.number !== false;
 
-  const s: Record<string, React.CSSProperties> = {
-    page: { background: '#0D0D0D', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif", color: '#F5EDD8' },
-    header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid rgba(201,148,58,0.2)', background: 'rgba(13,13,13,0.96)', position: 'sticky', top: 0, zIndex: 50 },
-    logo: { fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 900, color: '#C9943A', letterSpacing: '0.05em' },
-    main: { maxWidth: 720, margin: '0 auto', padding: '32px 20px 60px' },
-    card: { background: '#1A1A1A', borderRadius: 20, border: '1px solid rgba(255,255,255,0.08)', padding: '24px 20px', marginBottom: 20 },
-  };
+  // Group results by category, preserve alphabetical category order
+  const grouped: Record<string, VoteResult[]> = {};
+  results.forEach(r => {
+    const cat = r.registration.category || 'General';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(r);
+  });
+  const categories = Object.keys(grouped).sort();
 
   if (publicEvents.length === 0) {
     return (
-      <div style={s.page}>
-        <header style={s.header}>
-          <div style={s.logo}>CBKM <span style={{ color: '#F5EDD8' }}>·</span> Results</div>
-        </header>
-        <main style={s.main}>
-          <div style={{ ...s.card, textAlign: 'center', padding: '56px 24px' }}>
-            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>📊</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: '#F5EDD8', marginBottom: 8 }}>Results Not Published</h2>
-            <p style={{ color: '#777', fontSize: 14 }}>Results will be published after the event.</p>
+      <div style={{ background: BG, minHeight: '100vh', fontFamily: "'DM Sans', sans-serif", color: TEXT, display: 'flex', flexDirection: 'column' }}>
+        <header style={{ display: 'flex', alignItems: 'center', padding: '16px 24px', borderBottom: `1px solid ${BORDER}`, background: 'rgba(13,13,13,0.96)' }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 900, color: GOLD, letterSpacing: '0.05em' }}>
+            CBKM <span style={{ color: TEXT }}>·</span> Results
           </div>
-        </main>
+        </header>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>📊</div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: TEXT, marginBottom: 8 }}>Results Not Published</h2>
+            <p style={{ color: MUTED, fontSize: 14 }}>Results will be published after the event.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={s.page}>
-      <header style={s.header}>
-        <div style={s.logo}>CBKM <span style={{ color: '#F5EDD8' }}>·</span> Results</div>
-        <span style={{ fontSize: 12, color: '#888' }}>{totalVotes} vote{totalVotes !== 1 ? 's' : ''} cast</span>
+    <div style={{ background: BG, minHeight: '100vh', fontFamily: "'DM Sans', sans-serif", color: TEXT }}>
+      {/* Sticky header */}
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 24px', borderBottom: `1px solid ${BORDER}`,
+        background: 'rgba(13,13,13,0.97)', position: 'sticky', top: 0, zIndex: 50,
+        backdropFilter: 'blur(12px)',
+      }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 900, color: GOLD, letterSpacing: '0.05em' }}>
+          CBKM <span style={{ color: TEXT }}>·</span> Results
+        </div>
+        {totalVotes > 0 && (
+          <span style={{ fontSize: 12, color: MUTED }}>
+            {totalVotes} vote{totalVotes !== 1 ? 's' : ''} cast
+          </span>
+        )}
       </header>
 
-      <main style={s.main}>
-        {/* Event hero */}
+      <main style={{ maxWidth: 700, margin: '0 auto', padding: '28px 16px 72px' }}>
+
+        {/* Event hero card */}
         {selectedEvent && (
-          <div style={{ ...s.card, padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+          <div style={{ borderRadius: 20, overflow: 'hidden', border: `1px solid ${BORDER}`, marginBottom: 20, background: SURFACE }}>
             {selectedEvent.image && (
-              <div style={{ height: 140, overflow: 'hidden', position: 'relative' }}>
-                <img src={selectedEvent.image} alt={selectedEvent.name} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.45 }} />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #1A1A1A 0%, transparent 60%)' }} />
+              <div style={{ height: 130, overflow: 'hidden', position: 'relative' }}>
+                <img src={selectedEvent.image} alt={selectedEvent.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.4 }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #161616 0%, transparent 60%)' }} />
               </div>
             )}
-            <div style={{ padding: '16px 24px' }}>
-              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(22px,4vw,32px)', fontWeight: 900, color: '#F5EDD8', marginBottom: 4 }}>{selectedEvent.name}</h1>
-              <p style={{ color: '#888', fontSize: 13 }}>{formatEventDate(selectedEvent.date)}</p>
+            <div style={{ padding: '16px 22px' }}>
+              <h1 style={{
+                fontFamily: "'Playfair Display', serif",
+                fontSize: 'clamp(20px,4vw,28px)',
+                fontWeight: 900, color: TEXT, margin: '0 0 4px',
+              }}>{selectedEvent.name}</h1>
+              <p style={{ color: MUTED, fontSize: 13, margin: 0 }}>{formatEventDate(selectedEvent.date)}</p>
             </div>
           </div>
         )}
 
+        {/* Event selector */}
         {publicEvents.length > 1 && (
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 24 }}>
             <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
-              style={{ background: '#252525', border: '1px solid rgba(201,148,58,0.3)', borderRadius: 10, padding: '8px 14px', color: '#F5EDD8', fontSize: 14, width: '100%', outline: 'none' }}>
+              style={{
+                background: SURFACE2, border: `1px solid rgba(201,148,58,0.25)`,
+                borderRadius: 10, padding: '9px 14px', color: TEXT, fontSize: 14,
+                width: '100%', outline: 'none', cursor: 'pointer',
+              }}>
               {publicEvents.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </div>
         )}
 
         {loading ? (
-          <div style={{ ...s.card, textAlign: 'center', padding: '40px' }}>
-            <p style={{ color: '#888' }}>Loading results...</p>
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <div style={{ fontSize: 13, color: MUTED }}>Loading results…</div>
           </div>
         ) : results.length === 0 ? (
-          <div style={{ ...s.card, textAlign: 'center', padding: '40px' }}>
-            <p style={{ color: '#888', fontSize: 14 }}>No votes recorded yet.</p>
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>🎭</div>
+            <p style={{ color: MUTED, fontSize: 14 }}>No votes recorded yet.</p>
           </div>
         ) : (
-          <div style={s.card}>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, color: '#C9943A', marginBottom: 20, textAlign: 'center' }}>
-              Live Results
+          <>
+            {/* Section label */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+              <div style={{ flex: 1, height: 1, background: BORDER }} />
+              <span style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.12em', whiteSpace: 'nowrap' }}>
+                Live Results
+              </span>
+              <div style={{ flex: 1, height: 1, background: BORDER }} />
             </div>
-            {results.map((r, i) => (
-              <div key={r.registration.id} style={{ marginBottom: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div>
-                    <span style={{ fontSize: 14, fontWeight: i === 0 ? 700 : 400, color: i === 0 ? '#C9943A' : '#F5EDD8' }}>
-                      {i === 0 ? '🏆 ' : `${i + 1}. `}{r.registration.name}
-                    </span>
-                    {r.registration.participantNumber && (
-                      <span style={{ fontSize: 11, color: '#C9943A', marginLeft: 8 }}>#{r.registration.participantNumber}</span>
-                    )}
-                    {r.registration.category && (
-                      <span style={{ fontSize: 11, color: '#666', marginLeft: 6 }}>{r.registration.category}</span>
-                    )}
-                  </div>
-                  <div style={{ textAlign: 'right', fontSize: 13, color: '#888' }}>
-                    {votingType === 'choice' ? `${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''} · ${r.percent}%`
-                     : `avg ${r.avgScore}${votingType === 'stars' ? '★' : '/10'} · ${r.totalVotes} vote${r.totalVotes !== 1 ? 's' : ''}`}
-                  </div>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 100, height: 8, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${votingType === 'choice' ? r.percent : (r.avgScore / (votingType === 'stars' ? 5 : 10)) * 100}%`,
-                    height: '100%',
-                    background: i === 0 ? 'linear-gradient(90deg,#C9943A,#E8C07A)' : 'rgba(201,148,58,0.35)',
-                    borderRadius: 100, transition: 'width 0.6s ease',
-                  }} />
-                </div>
-              </div>
+
+            {categories.map(cat => (
+              <CategorySection
+                key={cat}
+                category={cat}
+                items={grouped[cat]}
+                votingType={votingType}
+                showName={showName}
+                showNumber={showNumber}
+              />
             ))}
-          </div>
+          </>
         )}
       </main>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar, Users, Image, HandHeart, Phone, Settings, LogOut,
@@ -13,12 +13,13 @@ import { useEvents } from '../../context/EventsContext';
 import { fetchSponsors, createSponsor, updateSponsor, deleteSponsor, fetchPackages, createPackage, upsertPackage, deletePackage } from '../../lib/db/sponsors';
 import { fetchGallery, createGalleryImage, deleteGalleryImage } from '../../lib/db/gallery';
 import { fetchContacts } from '../../lib/db/contacts';
-import { fetchRegistrations, deleteRegistration, updateRegistration, fetchVotingParticipants } from '../../lib/db/registrations';
+import { fetchRegistrations, deleteRegistration, updateRegistration, createRegistration, fetchVotingParticipants } from '../../lib/db/registrations';
 import { fetchVotes, deleteVotes, computeResults, VoteResult } from '../../lib/db/votes';
 import { getSettings, setSetting } from '../../lib/db/settings';
 import { fetchBlogs, createBlog, updateBlog, deleteBlog } from '../../lib/db/blogs';
 import { uploadImage, uploadFile } from '../../lib/storage';
 import { formatEventDate } from '../../lib/dateUtils';
+import { DEFAULT_TICKET_LINK } from '../../lib/db/events';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EmailConfig { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string; fromEmail: string; fromName: string; }
@@ -84,7 +85,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
   // ── Tab state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('events');
-  const [attendeeSubTab, setAttendeeSubTab] = useState<'list' | 'config'>('list');
+  const [attendeeSubTab, setAttendeeSubTab] = useState<'list' | 'analytics' | 'config'>('list');
   const [participantSubTab, setParticipantSubTab] = useState<'list' | 'config'>('list');
 
   // ── Event modals ───────────────────────────────────────────────────────────
@@ -127,8 +128,8 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const [notificationEmails, setNotificationEmails] = useState('');
 
   // ── Filters ────────────────────────────────────────────────────────────────
-  const [attendeeFilters, setAttendeeFilters] = useState({ year: '', eventName: '' });
-  const [participantFilters, setParticipantFilters] = useState({ year: '', eventName: '' });
+  const [attendeeFilters, setAttendeeFilters] = useState({ year: '', eventName: '', eventStatus: 'active' as 'active' | 'all' | 'past' });
+  const [participantFilters, setParticipantFilters] = useState({ year: '', eventName: '', eventStatus: 'active' as 'active' | 'all' | 'past' });
   const [sidePanelRecord, setSidePanelRecord] = useState<Registration | null>(null);
   const [showAttendeeColMenu, setShowAttendeeColMenu] = useState(false);
   const [showParticipantColMenu, setShowParticipantColMenu] = useState(false);
@@ -137,6 +138,14 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
   const [dataLoading, setDataLoading] = useState(true);
   const [editingRegistration, setEditingRegistration] = useState<Registration | null>(null);
+  const [addingRegistration, setAddingRegistration] = useState<{ type: 'attendee' | 'participant'; eventId: string } | null>(null);
+
+  // ── Vote page setting ──────────────────────────────────────────────────────
+  const [votePageEnabled, setVotePageEnabled] = useState(false);
+
+  // ── Selected contact (side panel) ─────────────────────────────────────────
+  const [selectedContact, setSelectedContact] = useState<any>(null);
+
 
   // ── Toast + Confirm ────────────────────────────────────────────────────────
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -156,7 +165,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     const load = async () => {
       const [sp, pkg, gal, regs, ctcs, bls, settings] = await Promise.allSettled([
         fetchSponsors(), fetchPackages(), fetchGallery(), fetchRegistrations(), fetchContacts(), fetchBlogs(),
-        getSettings(['smtp_config', 'attendee_email_config', 'participant_email_config', 'sponsorship_levels', 'notification_emails']),
+        getSettings(['smtp_config', 'attendee_email_config', 'participant_email_config', 'sponsorship_levels', 'notification_emails', 'vote_page_enabled']),
       ]);
       if (sp.status === 'fulfilled') setSponsors(sp.value as Sponsor[]);
       if (pkg.status === 'fulfilled') setSponsorPackages(pkg.value as SponsorshipPackage[]);
@@ -169,6 +178,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         if (s['sponsorship_levels']) { try { setSponsorLevels(JSON.parse(s['sponsorship_levels'])); } catch {} }
         if (s['smtp_config']) { try { setEmailConfig(JSON.parse(s['smtp_config'])); } catch {} }
         if (s['notification_emails']) setNotificationEmails(s['notification_emails']);
+        if (s['vote_page_enabled']) setVotePageEnabled(s['vote_page_enabled'] === 'true');
         if (s['attendee_email_config']) { try { const c = JSON.parse(s['attendee_email_config']); setAttendeeEmailConfig({ subject: c.subject || '', body: c.body || defaultEmailBody('attendee'), attachmentName: c.attachmentName || '' }); } catch {} } else { setAttendeeEmailConfig({ subject: 'Registration Confirmed – {{event}}', body: defaultEmailBody('attendee'), attachmentName: '' }); }
         if (s['participant_email_config']) { try { const c = JSON.parse(s['participant_email_config']); setParticipantEmailConfig({ subject: c.subject || '', body: c.body || defaultEmailBody('participant'), attachmentName: c.attachmentName || '' }); } catch {} } else { setParticipantEmailConfig({ subject: 'Participant Registration Confirmed – {{event}}', body: defaultEmailBody('participant'), attachmentName: '' }); }
       }
@@ -315,22 +325,520 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   // ATTENDEES TAB
   // ══════════════════════════════════════════════════════════════════════════
   const renderAttendeesTab = () => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     const allRegs = registrations.filter(r => r.type === 'attendee');
     const filtered = allRegs.filter(r => {
       const event = events.find(e => e.id === r.eventId);
-      return (!attendeeFilters.year || new Date(r.registrationDate).getFullYear().toString() === attendeeFilters.year)
+      const eventDate = event ? new Date(event.date) : null;
+      const statusOk = attendeeFilters.eventStatus === 'all' ? true
+        : attendeeFilters.eventStatus === 'active' ? (eventDate ? eventDate >= today : true)
+        : (eventDate ? eventDate < today : false);
+      return statusOk
+        && (!attendeeFilters.year || new Date(r.registrationDate).getFullYear().toString() === attendeeFilters.year)
         && (!attendeeFilters.eventName || event?.name.toLowerCase().includes(attendeeFilters.eventName.toLowerCase()));
     });
     const years = Array.from(new Set(allRegs.map(r => new Date(r.registrationDate).getFullYear().toString())));
     const eventNames = Array.from(new Set(allRegs.map(r => events.find(e => e.id === r.eventId)?.name || '').filter(Boolean)));
 
+    const AttendeeAnalytics = () => {
+      const todayMs = new Date(new Date().toDateString()).getTime();
+      const activeEvents = events.filter(e => new Date(e.date).getTime() >= todayMs && !e.hidden);
+      const sortedEvents = [...events].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const defaultChartEventId = activeEvents.length > 0
+        ? [...activeEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0].id
+        : sortedEvents[0]?.id || '';
+
+      const [analyticsYear, setAnalyticsYear] = useState('');
+      const [chartEventId, setChartEventId] = useState(defaultChartEventId);
+      const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+      const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+      const [dupPanel, setDupPanel] = useState<{ email: string; eventId: string } | null>(null);
+      const [ignoredDups, setIgnoredDups] = useState<string[]>([]);
+      const svgRef = useRef<SVGSVGElement>(null);
+
+      const attendeeRegs = registrations.filter(r => r.type === 'attendee');
+      const analyticsYears = Array.from(new Set(attendeeRegs.map(r => new Date(r.registrationDate).getFullYear().toString()))).sort((a, b) => b.localeCompare(a));
+      const filteredAnalytics = analyticsYear
+        ? attendeeRegs.filter(r => new Date(r.registrationDate).getFullYear().toString() === analyticsYear)
+        : attendeeRegs;
+
+      const totalRegs = filteredAnalytics.length;
+      const totalAdults = filteredAnalytics.reduce((s, r) => s + (r.adults || 0), 0);
+      const totalKidsAbove6 = filteredAnalytics.reduce((s, r) => s + (r.kidsAbove6 || 0), 0);
+      const totalKidsBelow6 = filteredAnalytics.reduce((s, r) => s + (r.kidsBelow6 || 0), 0);
+      const totalPersons = totalAdults + totalKidsAbove6 + totalKidsBelow6;
+      const avgPersons = totalRegs > 0 ? (totalPersons / totalRegs).toFixed(1) : '0';
+
+      // Repeat attendees: same email across 2+ different events
+      const emailToEventIds: Record<string, Set<string>> = {};
+      attendeeRegs.forEach(r => {
+        if (!emailToEventIds[r.email]) emailToEventIds[r.email] = new Set();
+        emailToEventIds[r.email].add(r.eventId);
+      });
+      const repeatAttendees = Object.entries(emailToEventIds).filter(([, evSet]) => evSet.size > 1);
+
+      // Duplicates: same email within same event, with eventId stored
+      const dupMap: Record<string, Record<string, number>> = {};
+      attendeeRegs.forEach(r => {
+        if (!dupMap[r.eventId]) dupMap[r.eventId] = {};
+        dupMap[r.eventId][r.email] = (dupMap[r.eventId][r.email] || 0) + 1;
+      });
+      const allDuplicates: { eventId: string; eventName: string; email: string; count: number }[] = [];
+      Object.entries(dupMap).forEach(([evId, emailCounts]) => {
+        const evName = events.find(e => e.id === evId)?.name || evId;
+        Object.entries(emailCounts).filter(([, c]) => c > 1).forEach(([email, count]) => {
+          allDuplicates.push({ eventId: evId, eventName: evName, email, count });
+        });
+      });
+      const duplicates = allDuplicates.filter(d => !ignoredDups.includes(`${d.email}::${d.eventId}`));
+
+      // Day of week analysis
+      const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dowCounts = new Array(7).fill(0);
+      filteredAnalytics.forEach(r => { dowCounts[new Date(r.registrationDate).getDay()]++; });
+      const maxDowCount = Math.max(...dowCounts, 1);
+      const busiestDayIdx = dowCounts.indexOf(Math.max(...dowCounts));
+
+      // Chart data: two series (registrations + persons)
+      const chartRegs = chartEventId ? attendeeRegs.filter(r => r.eventId === chartEventId) : attendeeRegs;
+      const chartSorted = [...chartRegs].sort((a, b) => new Date(a.registrationDate).getTime() - new Date(b.registrationDate).getTime());
+      const chartByDayRegs: Record<string, number> = {};
+      const chartByDayPersons: Record<string, number> = {};
+      chartSorted.forEach(r => {
+        const d = r.registrationDate.slice(0, 10);
+        chartByDayRegs[d] = (chartByDayRegs[d] || 0) + 1;
+        chartByDayPersons[d] = (chartByDayPersons[d] || 0) + (r.adults || 0) + (r.kidsAbove6 || 0) + (r.kidsBelow6 || 0);
+      });
+      const chartDays = Object.keys(chartByDayRegs).sort();
+      let cumR = 0, cumP = 0;
+      const chartPtsRegs = chartDays.map(d => { cumR += chartByDayRegs[d]; return cumR; });
+      const chartPtsPersons = chartDays.map(d => { cumP += (chartByDayPersons[d] || 0); return cumP; });
+
+      // SVG chart dimensions
+      const W = 600, H = 220, PADL = 44, PADR = 16, PADT = 20, PADB = 44;
+      const plotW = W - PADL - PADR;
+      const plotH = H - PADT - PADB;
+      const maxY = Math.max(...chartPtsRegs, ...chartPtsPersons, 1);
+      const Y_TICKS = 4;
+      const xScale = (i: number) => PADL + (i / Math.max(chartDays.length - 1, 1)) * plotW;
+      const yScale = (v: number) => PADT + plotH - (v / maxY) * plotH;
+      const makePath = (pts: number[]) => pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(v).toFixed(1)}`).join(' ');
+      const regsPath = makePath(chartPtsRegs);
+      const personsPath = makePath(chartPtsPersons);
+      const regsAreaPath = chartPtsRegs.length > 0
+        ? `${regsPath} L ${xScale(chartPtsRegs.length - 1).toFixed(1)} ${(PADT + plotH).toFixed(1)} L ${PADL} ${(PADT + plotH).toFixed(1)} Z`
+        : '';
+      const X_LABEL_COUNT = Math.min(chartDays.length, 6);
+      const xLabelIndices = chartDays.length <= 1
+        ? (chartDays.length === 1 ? [0] : [])
+        : chartDays.length <= X_LABEL_COUNT
+          ? chartDays.map((_, i) => i)
+          : Array.from({ length: X_LABEL_COUNT }, (_, i) => Math.round(i * (chartDays.length - 1) / (X_LABEL_COUNT - 1)));
+
+      const handlePointHover = (e: React.MouseEvent, i: number) => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        setTooltipPos({
+          x: xScale(i) * (rect.width / W),
+          y: yScale(chartPtsRegs[i]) * (rect.height / H),
+        });
+        setHoverIdx(i);
+      };
+
+      // Duplicate panel: the actual registration rows for this email+event
+      const dupPanelRegs = dupPanel
+        ? attendeeRegs.filter(r => r.email === dupPanel.email && r.eventId === dupPanel.eventId)
+        : [];
+
+      const handleDeleteDupReg = async (id: string) => {
+        try {
+          await deleteRegistration(id);
+          setRegistrations(prev => prev.filter(r => r.id !== id));
+          if (dupPanelRegs.filter(r => r.id !== id).length <= 1) setDupPanel(null);
+          showToast('Registration deleted');
+        } catch {
+          showToast('Failed to delete', 'error');
+        }
+      };
+
+      // Per-event breakdown
+      const eventBreakdown = events.map(ev => {
+        const evRegs = filteredAnalytics.filter(r => r.eventId === ev.id);
+        if (!evRegs.length) return null;
+        const persons = evRegs.reduce((s, r) => s + (r.adults || 0) + (r.kidsAbove6 || 0) + (r.kidsBelow6 || 0), 0);
+        return {
+          name: ev.name, date: ev.date, count: evRegs.length, persons,
+          adults: evRegs.reduce((s, r) => s + (r.adults || 0), 0),
+          kidsAbove6: evRegs.reduce((s, r) => s + (r.kidsAbove6 || 0), 0),
+          kidsBelow6: evRegs.reduce((s, r) => s + (r.kidsBelow6 || 0), 0),
+        };
+      }).filter(Boolean) as { name: string; date: string; count: number; persons: number; adults: number; kidsAbove6: number; kidsBelow6: number }[];
+
+      return (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Attendee Analytics</h3>
+            <select value={analyticsYear} onChange={e => setAnalyticsYear(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+              <option value="">All Years</option>
+              {analyticsYears.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Stat row 1: top-level numbers */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="rounded-xl p-4 bg-blue-50 text-blue-700">
+              <p className="text-2xl font-bold">{totalRegs}</p>
+              <p className="text-sm mt-0.5 opacity-80">Total Registrations</p>
+            </div>
+            <div className="rounded-xl p-4 bg-emerald-50 text-emerald-700">
+              <p className="text-2xl font-bold">{totalPersons}</p>
+              <p className="text-sm mt-0.5 opacity-80">Total Attendees (people)</p>
+            </div>
+            <div className="rounded-xl p-4 bg-indigo-50 text-indigo-700">
+              <p className="text-2xl font-bold">{avgPersons}</p>
+              <p className="text-sm mt-0.5 opacity-80">Avg Persons / Registration</p>
+            </div>
+          </div>
+
+          {/* Stat row 2: breakdown */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Adults', value: totalAdults, color: 'bg-green-50 text-green-700' },
+              { label: 'Kids Above 6', value: totalKidsAbove6, color: 'bg-amber-50 text-amber-700' },
+              { label: 'Kids Below 6', value: totalKidsBelow6, color: 'bg-purple-50 text-purple-700' },
+              { label: 'Repeat Attendees', value: repeatAttendees.length, color: 'bg-rose-50 text-rose-700' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className={`rounded-xl p-4 ${color}`}>
+                <p className="text-2xl font-bold">{value}</p>
+                <p className="text-sm mt-0.5 opacity-80">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Interactive dual-line chart */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700">Cumulative Registrations &amp; Attendees Over Time</h4>
+                <div className="flex items-center gap-4 mt-1">
+                  <span className="flex items-center gap-1.5 text-xs text-indigo-600">
+                    <span className="inline-block w-4 h-0.5 bg-indigo-500 rounded" />Registrations
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-600">
+                    <span className="inline-block w-4 border-t-2 border-dashed border-emerald-500" style={{ width: 16 }} />Attendees
+                  </span>
+                </div>
+              </div>
+              <select value={chartEventId} onChange={e => setChartEventId(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded-lg text-xs max-w-[180px]">
+                <option value="">All Events</option>
+                {sortedEvents.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+              </select>
+            </div>
+
+            {chartDays.length > 0 ? (
+              <div style={{ position: 'relative' }}>
+                <svg
+                  ref={svgRef}
+                  viewBox={`0 0 ${W} ${H}`}
+                  className="w-full"
+                  style={{ height: 220, display: 'block' }}
+                  onMouseLeave={() => setHoverIdx(null)}
+                >
+                  <defs>
+                    <linearGradient id="areaGradRegs" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.15" />
+                      <stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Y-axis gridlines + labels */}
+                  {Array.from({ length: Y_TICKS + 1 }, (_, i) => {
+                    const val = Math.round((maxY / Y_TICKS) * i);
+                    const y = yScale(val);
+                    return (
+                      <g key={i}>
+                        <line x1={PADL} y1={y} x2={W - PADR} y2={y} stroke="#f0f0f0" strokeWidth="1" />
+                        <text x={PADL - 5} y={y + 3.5} fontSize="9" fill="#aaa" textAnchor="end">{val}</text>
+                      </g>
+                    );
+                  })}
+
+                  {/* X-axis baseline */}
+                  <line x1={PADL} y1={PADT + plotH} x2={W - PADR} y2={PADT + plotH} stroke="#e5e7eb" strokeWidth="1" />
+
+                  {/* Hover crosshair */}
+                  {hoverIdx !== null && (
+                    <line x1={xScale(hoverIdx)} y1={PADT} x2={xScale(hoverIdx)} y2={PADT + plotH}
+                      stroke="#d1d5db" strokeWidth="1" strokeDasharray="3,3" />
+                  )}
+
+                  {/* Regs area + solid line */}
+                  {regsAreaPath && <path d={regsAreaPath} fill="url(#areaGradRegs)" />}
+                  {regsPath && <path d={regsPath} fill="none" stroke="#4F46E5" strokeWidth="2" strokeLinejoin="round" />}
+
+                  {/* Persons dashed line */}
+                  {personsPath && <path d={personsPath} fill="none" stroke="#059669" strokeWidth="2" strokeLinejoin="round" strokeDasharray="5,3" />}
+
+                  {/* X-axis date labels */}
+                  {xLabelIndices.map(i => (
+                    <text key={i} x={xScale(i)} y={PADT + plotH + 16} fontSize="8.5" fill="#999" textAnchor="middle">
+                      {chartDays[i]?.slice(5)}
+                    </text>
+                  ))}
+
+                  {/* Invisible hit zones + dots */}
+                  {chartPtsRegs.map((v, i) => (
+                    <g key={i} onMouseEnter={e => handlePointHover(e, i)}>
+                      <rect x={xScale(i) - 12} y={PADT} width={24} height={plotH} fill="transparent" style={{ cursor: 'crosshair' }} />
+                      <circle cx={xScale(i)} cy={yScale(v)} r={hoverIdx === i ? 5 : 3}
+                        fill="#4F46E5" stroke="white" strokeWidth={hoverIdx === i ? 1.5 : 0} />
+                      <circle cx={xScale(i)} cy={yScale(chartPtsPersons[i])} r={hoverIdx === i ? 5 : 3}
+                        fill="#059669" stroke="white" strokeWidth={hoverIdx === i ? 1.5 : 0} />
+                    </g>
+                  ))}
+                </svg>
+
+                {/* Floating tooltip */}
+                {hoverIdx !== null && chartDays[hoverIdx] && (() => {
+                  const tipW = 168;
+                  const svgW = svgRef.current?.clientWidth || 600;
+                  let left = tooltipPos.x - tipW / 2;
+                  if (left < 4) left = 4;
+                  if (left + tipW > svgW - 4) left = svgW - tipW - 4;
+                  const top = Math.max(tooltipPos.y - 90, 4);
+                  return (
+                    <div style={{
+                      position: 'absolute', left, top,
+                      background: 'white', border: '1px solid #e5e7eb',
+                      borderRadius: 10, padding: '10px 12px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      fontSize: 12, pointerEvents: 'none', zIndex: 10, width: tipW,
+                    }}>
+                      <div style={{ fontWeight: 700, color: '#374151', marginBottom: 7, fontSize: 11, borderBottom: '1px solid #f3f4f6', paddingBottom: 5 }}>
+                        {chartDays[hoverIdx]}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#6b7280' }}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#4F46E5', display: 'inline-block' }} />
+                          Registrations
+                        </span>
+                        <span style={{ fontWeight: 700, color: '#4F46E5' }}>{chartPtsRegs[hoverIdx]}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#6b7280' }}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />
+                          Attendees
+                        </span>
+                        <span style={{ fontWeight: 700, color: '#059669' }}>{chartPtsPersons[hoverIdx]}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: '#9ca3af', borderTop: '1px solid #f3f4f6', paddingTop: 5 }}>
+                        +{chartByDayRegs[chartDays[hoverIdx]]} reg · +{chartByDayPersons[chartDays[hoverIdx]] || 0} people that day
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-10">No registrations for selected event.</p>
+            )}
+          </div>
+
+          {/* Day of week analysis */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-3">Registrations by Day of Week</h4>
+            {totalRegs > 0 ? (
+              <>
+                <div className="space-y-2">
+                  {DOW_LABELS.map((day, idx) => (
+                    <div key={day} className="flex items-center gap-3">
+                      <span className={`text-xs w-24 shrink-0 ${idx === busiestDayIdx ? 'font-semibold text-indigo-600' : 'text-gray-500'}`}>{day}</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-3.5 overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${idx === busiestDayIdx ? 'bg-indigo-500' : 'bg-indigo-200'}`}
+                          style={{ width: `${(dowCounts[idx] / maxDowCount) * 100}%` }} />
+                      </div>
+                      <span className={`text-xs w-6 text-right shrink-0 ${idx === busiestDayIdx ? 'font-semibold text-indigo-600' : 'text-gray-400'}`}>{dowCounts[idx]}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-3">
+                  Busiest day: <span className="font-semibold text-indigo-600">{DOW_LABELS[busiestDayIdx]}</span> ({dowCounts[busiestDayIdx]} registrations)
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400">No data available.</p>
+            )}
+          </div>
+
+          {/* Repeat attendees */}
+          {repeatAttendees.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                Repeat Attendees — {repeatAttendees.length} email{repeatAttendees.length !== 1 ? 's' : ''} across multiple events
+              </h4>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {repeatAttendees.map(([email, evSet]) => (
+                  <div key={email} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                    <span className="text-gray-700 text-xs">{email}</span>
+                    <span className="text-xs text-indigo-600 font-medium shrink-0 ml-2">{evSet.size} events</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Duplicate registrations */}
+          {allDuplicates.length > 0 && (
+            <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
+              <div className="px-4 py-3 bg-orange-50 border-b border-orange-100 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-orange-700">
+                  ⚠ Duplicate Emails in Same Event
+                  {ignoredDups.length > 0 && (
+                    <span className="text-xs font-normal text-orange-500 ml-2">({ignoredDups.length} ignored)</span>
+                  )}
+                </h4>
+                <span className="text-xs text-orange-600 font-medium">{duplicates.length} to review</span>
+              </div>
+              {duplicates.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">All duplicates reviewed.</p>
+              ) : (
+                <div className="divide-y divide-orange-50">
+                  {duplicates.map((d, i) => (
+                    <div key={i}
+                      className="flex items-center justify-between px-4 py-3 hover:bg-orange-50 cursor-pointer transition-colors"
+                      onClick={() => setDupPanel({ email: d.email, eventId: d.eventId })}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-800">{d.email}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{d.eventName} · {d.count} entries</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <span className="text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">{d.count}×</span>
+                        <span className="text-gray-400 text-xs">View →</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Per-event breakdown table */}
+          {eventBreakdown.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Regs</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Attendees</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Adults</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Kids &gt;6</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Kids &lt;6</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {eventBreakdown.map(ev => (
+                    <tr key={ev.name} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{ev.name}</td>
+                      <td className="px-4 py-3 text-gray-500">{formatEventDate(ev.date)}</td>
+                      <td className="px-4 py-3 text-right text-gray-700 font-medium">{ev.count}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-emerald-700">{ev.persons}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{ev.adults}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{ev.kidsAbove6}</td>
+                      <td className="px-4 py-3 text-right text-gray-500">{ev.kidsBelow6}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Duplicate side panel */}
+          {dupPanel && (
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end' }}
+              onClick={() => setDupPanel(null)}
+            >
+              <div
+                style={{ background: 'white', width: '100%', maxWidth: 460, overflowY: 'auto', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)', padding: 24 }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-base font-semibold text-gray-900">Duplicate Registrations</h3>
+                  <button onClick={() => setDupPanel(null)} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+                </div>
+                <p className="text-xs text-gray-500 mb-1">{dupPanel.email}</p>
+                <p className="text-xs text-gray-400 mb-5">
+                  {events.find(e => e.id === dupPanel.eventId)?.name} · {dupPanelRegs.length} entries found
+                </p>
+
+                <div className="space-y-4">
+                  {dupPanelRegs.map((reg, idx) => (
+                    <div key={reg.id} className={`rounded-xl border-2 p-4 ${idx === 0 ? 'border-blue-200 bg-blue-50' : 'border-orange-200 bg-orange-50'}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                          Entry {idx + 1}
+                        </span>
+                        <span className="text-xs text-gray-400">{new Date(reg.registrationDate).toLocaleString()}</span>
+                      </div>
+                      <div className="space-y-1.5 text-sm mb-4">
+                        {[
+                          ['Name', reg.name],
+                          ['Email', reg.email],
+                          ['Phone', reg.phone || '—'],
+                          ['Tickets', String(reg.numberOfTickets || 0)],
+                          ['Adults', String(reg.adults || 0)],
+                          ['Kids >6', String(reg.kidsAbove6 || 0)],
+                          ['Kids <6', String(reg.kidsBelow6 || 0)],
+                          ...(reg.specialRequirements ? [['Special Req.', reg.specialRequirements]] : []),
+                        ].map(([label, val]) => (
+                          <div key={label} className="flex justify-between gap-4">
+                            <span className="text-gray-500 shrink-0">{label}</span>
+                            <span className="text-gray-800 font-medium text-right">{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => showConfirm(`Delete entry ${idx + 1} for ${reg.name}? This cannot be undone.`, () => handleDeleteDupReg(reg.id))}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <Trash2 size={14} /> Delete This Entry
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100">
+                  <p className="text-xs text-gray-500 mb-3">If this is legitimate (e.g. different family members using the same email), mark it as ignored.</p>
+                  <button
+                    onClick={() => {
+                      setIgnoredDups(prev => [...prev, `${dupPanel.email}::${dupPanel.eventId}`]);
+                      setDupPanel(null);
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Mark as Legitimate / Ignore
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div>
         <div className="flex space-x-1 mb-6 border-b">
-          {(['list', 'config'] as const).map(t => (
+          {(['list', 'analytics', 'config'] as const).map(t => (
             <button key={t} onClick={() => setAttendeeSubTab(t)}
               className={`px-4 py-2 font-medium text-sm border-b-2 -mb-px ${attendeeSubTab === t ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              {t === 'list' ? 'Attendees' : 'Configuration'}
+              {t === 'list' ? 'Attendees' : t === 'analytics' ? 'Analytics' : 'Configuration'}
             </button>
           ))}
         </div>
@@ -339,6 +847,10 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-gray-900">Attendees</h2>
               <div className="flex items-center space-x-2">
+                <button onClick={() => setAddingRegistration({ type: 'attendee', eventId: events[0]?.id || '' })}
+                  className="bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 flex items-center text-sm font-medium">
+                  <Plus className="w-4 h-4 mr-1" />Add Attendee
+                </button>
                 <button onClick={refreshRegistrations} disabled={refreshing}
                   className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center disabled:opacity-50"
                   title="Refresh data">
@@ -366,6 +878,19 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
             </div>
             <div className="bg-white rounded-lg shadow p-4 mb-4">
+              <div className="flex flex-wrap gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Event Status</label>
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                    {(['active', 'all', 'past'] as const).map(s => (
+                      <button key={s} onClick={() => setAttendeeFilters({ ...attendeeFilters, eventStatus: s })}
+                        className={`px-3 py-1.5 capitalize transition-colors ${attendeeFilters.eventStatus === s ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Year</label>
@@ -384,7 +909,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button onClick={() => setAttendeeFilters({ year: '', eventName: '' })}
+                  <button onClick={() => setAttendeeFilters({ year: '', eventName: '', eventStatus: 'active' })}
                     className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">Clear</button>
                 </div>
               </div>
@@ -411,6 +936,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                         {attendeeCols.kidsAbove6 && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kids &gt;6</th>}
                         {attendeeCols.kidsBelow6 && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kids &lt;6</th>}
                         {customKeys.map(k => <th key={k} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{fieldLabelMap[k] || k}</th>)}
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                         <th className="px-4 py-3" />
                       </tr>
                     </thead>
@@ -429,6 +955,11 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                             {attendeeCols.kidsAbove6 && <td className="px-4 py-3 text-sm text-gray-500">{r.kidsAbove6 || 0}</td>}
                             {attendeeCols.kidsBelow6 && <td className="px-4 py-3 text-sm text-gray-500">{r.kidsBelow6 || 0}</td>}
                             {customKeys.map(k => <td key={k} className="px-4 py-3 text-sm text-gray-500">{r.customFields?.[k] || '—'}</td>)}
+                            <td className="px-4 py-3">
+                              {r.emailStatus === 'sent' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Sent</span>}
+                              {r.emailStatus === 'failed' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Failed</span>}
+                              {(!r.emailStatus || r.emailStatus === 'not_sent') && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Not Sent</span>}
+                            </td>
                             <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end space-x-1">
                                 <button onClick={() => setEditingRegistration(r)} className="p-1 text-primary-600 hover:text-primary-800"><Edit className="w-4 h-4" /></button>
@@ -444,6 +975,8 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               );
             })()}
           </>
+        ) : attendeeSubTab === 'analytics' ? (
+          <AttendeeAnalytics />
         ) : (
           <AttendeeParticipantConfig type="attendee" emailConfig={attendeeEmailConfig}
             onSave={async cfg => { setAttendeeEmailConfig(cfg); await setSetting('attendee_email_config', JSON.stringify(cfg)); showToast('Attendee email config saved!'); }} />
@@ -456,14 +989,49 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   // PARTICIPANTS TAB
   // ══════════════════════════════════════════════════════════════════════════
   const renderParticipantsTab = () => {
+    const today2 = new Date(); today2.setHours(0, 0, 0, 0);
     const allRegs = registrations.filter(r => r.type === 'participant');
     const filtered = allRegs.filter(r => {
       const event = events.find(e => e.id === r.eventId);
-      return (!participantFilters.year || new Date(r.registrationDate).getFullYear().toString() === participantFilters.year)
+      const eventDate = event ? new Date(event.date) : null;
+      const statusOk = participantFilters.eventStatus === 'all' ? true
+        : participantFilters.eventStatus === 'active' ? (eventDate ? eventDate >= today2 : true)
+        : (eventDate ? eventDate < today2 : false);
+      return statusOk
+        && (!participantFilters.year || new Date(r.registrationDate).getFullYear().toString() === participantFilters.year)
         && (!participantFilters.eventName || event?.name.toLowerCase().includes(participantFilters.eventName.toLowerCase()));
+    });
+    // Sort by sortOrder (nulls last), then by registrationDate
+    const sortedFiltered = [...filtered].sort((a, b) => {
+      if (a.sortOrder != null && b.sortOrder != null) return a.sortOrder - b.sortOrder;
+      if (a.sortOrder != null) return -1;
+      if (b.sortOrder != null) return 1;
+      return new Date(a.registrationDate).getTime() - new Date(b.registrationDate).getTime();
     });
     const years = Array.from(new Set(allRegs.map(r => new Date(r.registrationDate).getFullYear().toString())));
     const eventNames = Array.from(new Set(allRegs.map(r => events.find(e => e.id === r.eventId)?.name || '').filter(Boolean)));
+
+    const handleMoveParticipant = async (index: number, direction: 'up' | 'down') => {
+      const list = sortedFiltered;
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= list.length) return;
+
+      // If no sortOrder exists, initialize all with sequential values
+      const needsInit = list.some(r => r.sortOrder == null);
+      if (needsInit) {
+        await Promise.all(list.map((r, i) => quickUpdateReg(r.id, { sortOrder: i + 1 })));
+        // After init, compute new values
+        const newA = swapIndex + 1;
+        const newB = index + 1;
+        await quickUpdateReg(list[index].id, { sortOrder: newA });
+        await quickUpdateReg(list[swapIndex].id, { sortOrder: newB });
+      } else {
+        const orderA = list[swapIndex].sortOrder!;
+        const orderB = list[index].sortOrder!;
+        await quickUpdateReg(list[index].id, { sortOrder: orderA });
+        await quickUpdateReg(list[swapIndex].id, { sortOrder: orderB });
+      }
+    };
 
     return (
       <div>
@@ -480,6 +1048,10 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-gray-900">Participants</h2>
               <div className="flex items-center space-x-2">
+                <button onClick={() => setAddingRegistration({ type: 'participant', eventId: events[0]?.id || '' })}
+                  className="bg-primary-600 text-white px-3 py-2 rounded-lg hover:bg-primary-700 flex items-center text-sm font-medium">
+                  <Plus className="w-4 h-4 mr-1" />Add Participant
+                </button>
                 <button onClick={refreshRegistrations} disabled={refreshing}
                   className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center disabled:opacity-50"
                   title="Refresh data">
@@ -507,6 +1079,19 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               </div>
             </div>
             <div className="bg-white rounded-lg shadow p-4 mb-4">
+              <div className="flex flex-wrap gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Event Status</label>
+                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+                    {(['active', 'all', 'past'] as const).map(s => (
+                      <button key={s} onClick={() => setParticipantFilters({ ...participantFilters, eventStatus: s })}
+                        className={`px-3 py-1.5 capitalize transition-colors ${participantFilters.eventStatus === s ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Year</label>
@@ -525,7 +1110,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button onClick={() => setParticipantFilters({ year: '', eventName: '' })}
+                  <button onClick={() => setParticipantFilters({ year: '', eventName: '', eventStatus: 'active' })}
                     className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">Clear</button>
                 </div>
               </div>
@@ -534,14 +1119,15 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               const standardFieldNames = new Set(['fullName', 'name', 'email', 'phone', 'address', 'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6', 'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
               const fieldLabelMap: Record<string, string> = {};
               events.forEach(ev => [...(ev.attendeeForm || []), ...(ev.participantForm || [])].forEach(f => { if (f.name) fieldLabelMap[f.name] = f.label; }));
-              const filteredEventIds = new Set(filtered.map(r => r.eventId));
+              const filteredEventIds = new Set(sortedFiltered.map(r => r.eventId));
               const configKeys = events.filter(e => filteredEventIds.has(e.id)).flatMap(e => (e.participantForm || []).filter(f => f.name && !standardFieldNames.has(f.name)).map(f => f.name));
-              const customKeys = Array.from(new Set([...filtered.flatMap(r => Object.keys(r.customFields || {})), ...configKeys]));
+              const customKeys = Array.from(new Set([...sortedFiltered.flatMap(r => Object.keys(r.customFields || {})), ...configKeys]));
               return (
                 <div className="bg-white rounded-lg shadow overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
+                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
                         {participantCols.year && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>}
                         {participantCols.eventName && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>}
                         {participantCols.name && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>}
@@ -552,6 +1138,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                         {participantCols.category && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>}
                         {participantCols.performanceDetails && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Performance</th>}
                         {customKeys.map(k => <th key={k} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{fieldLabelMap[k] || k}</th>)}
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finalized</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Part #</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vote</th>
@@ -559,10 +1146,18 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {filtered.map(r => {
+                      {sortedFiltered.map((r, idx) => {
                         const event = events.find(e => e.id === r.eventId);
                         return (
                           <tr key={r.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSidePanelRecord(r)}>
+                            <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
+                              <div className="flex flex-col items-center">
+                                <button onClick={() => handleMoveParticipant(idx, 'up')} disabled={idx === 0}
+                                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 leading-none">↑</button>
+                                <button onClick={() => handleMoveParticipant(idx, 'down')} disabled={idx === sortedFiltered.length - 1}
+                                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 leading-none">↓</button>
+                              </div>
+                            </td>
                             {participantCols.year && <td className="px-4 py-3 text-sm text-gray-500">{new Date(r.registrationDate).getFullYear()}</td>}
                             {participantCols.eventName && <td className="px-4 py-3 text-sm font-medium text-gray-900">{event?.name || '—'}</td>}
                             {participantCols.name && <td className="px-4 py-3 text-sm text-gray-700">{r.name}</td>}
@@ -573,6 +1168,11 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                             {participantCols.category && <td className="px-4 py-3 text-sm text-gray-500">{r.category || '—'}</td>}
                             {participantCols.performanceDetails && <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{r.performanceDetails || '—'}</td>}
                             {customKeys.map(k => <td key={k} className="px-4 py-3 text-sm text-gray-500">{r.customFields?.[k] || '—'}</td>)}
+                            <td className="px-4 py-3">
+                              {r.emailStatus === 'sent' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Sent</span>}
+                              {r.emailStatus === 'failed' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Failed</span>}
+                              {(!r.emailStatus || r.emailStatus === 'not_sent') && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Not Sent</span>}
+                            </td>
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               <button onClick={() => quickUpdateReg(r.id, { performanceFinalized: !r.performanceFinalized, ...(!r.performanceFinalized ? {} : { votingEnabled: false }) })}
                                 className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${r.performanceFinalized ? 'bg-green-500' : 'bg-gray-200'}`}>
@@ -755,6 +1355,25 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
     return (
       <div>
+        {/* Vote page toggle */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Vote Page</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Show the /vote link in the website navigation</p>
+            </div>
+            <button onClick={async () => {
+              const next = !votePageEnabled;
+              setVotePageEnabled(next);
+              await setSetting('vote_page_enabled', String(next));
+              showToast(next ? 'Vote page enabled' : 'Vote page hidden');
+            }}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${votePageEnabled ? 'bg-primary-600' : 'bg-gray-200'}`}>
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${votePageEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
+
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Audience Voting</h2>
           <div className="flex gap-3">
@@ -1181,7 +1800,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {contacts.map((c: any) => (
-              <tr key={c.id} className="hover:bg-gray-50">
+              <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedContact(c)}>
                 <td className="px-6 py-4 text-sm font-medium text-gray-900">{c.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{c.email}</td>
                 <td className="px-6 py-4 text-sm text-gray-500">{c.phone || 'N/A'}</td>
@@ -1343,7 +1962,9 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         if (dupes.length) { showToast(`Duplicate field names in ${label} form: ${Array.from(new Set(dupes)).join(', ')}`, 'error'); return false; }
         return true;
       };
-      if (!validateFields(eventData.attendeeForm || [], 'Attendee') || !validateFields(eventData.participantForm || [], 'Participant')) return;
+      const useTicketLink = eventData.attendeeFormMode === 'link';
+      if (useTicketLink && !/^https?:\/\/\S+$/i.test((eventData.attendeeLinkUrl || '').trim())) { showToast('Enter a valid ticket link URL (starting with https://)', 'error'); return; }
+      if ((!useTicketLink && !validateFields(eventData.attendeeForm || [], 'Attendee')) || !validateFields(eventData.participantForm || [], 'Participant')) return;
       // One-event-at-a-time voting check
       if (eventData.votingEnabled) {
         const conflict = events.find(e => e.votingEnabled && e.id !== editingEvent?.id);
@@ -1582,6 +2203,36 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                   </button>
                 ))}
               </div>
+              {activeFormTab === 'attendee' && (
+                <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                  <p className="text-sm font-medium text-gray-800">Ticket purchase method</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {([
+                      { mode: 'form', label: 'Use attendee form', desc: 'Collect ticket requests with the fields below' },
+                      { mode: 'link', label: 'Use external ticket link', desc: 'Send buyers to an external ticketing page' },
+                    ] as const).map(({ mode, label, desc }) => {
+                      const active = (eventData.attendeeFormMode || 'form') === mode;
+                      return (
+                        <button key={mode} type="button"
+                          onClick={() => setEventData(prev => ({ ...prev, attendeeFormMode: mode, attendeeLinkUrl: mode === 'link' && !prev.attendeeLinkUrl ? DEFAULT_TICKET_LINK : prev.attendeeLinkUrl }))}
+                          className={`text-left px-4 py-3 rounded-xl border-2 transition-colors ${active ? 'border-primary-600 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                          <p className={`text-sm font-medium ${active ? 'text-primary-700' : 'text-gray-700'}`}>{label}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {eventData.attendeeFormMode === 'link' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Ticket Link URL</label>
+                      <input type="url" value={eventData.attendeeLinkUrl || ''} placeholder={DEFAULT_TICKET_LINK}
+                        onChange={e => setEventData(prev => ({ ...prev, attendeeLinkUrl: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {!(activeFormTab === 'attendee' && eventData.attendeeFormMode === 'link') && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-500">{currentFields?.length || 0} fields configured</span>
@@ -1651,6 +2302,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                   ))}
                 </div>
               </div>
+              )}
             </div>
 
           </div>
@@ -1801,6 +2453,144 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             </button>
           </div>
         </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ADD REGISTRATION MODAL
+  // ══════════════════════════════════════════════════════════════════════════
+  const AddRegistrationModal = () => {
+    const init = addingRegistration!;
+    const [eventId, setEventId] = useState(init.eventId);
+    const [type, setType] = useState<'attendee' | 'participant'>(init.type);
+    const [form, setForm] = useState<Partial<Registration>>({ name: '', email: '', phone: '', address: '', numberOfTickets: 0, adults: 0, kidsAbove6: 0, kidsBelow6: 0, numberOfParticipants: 0, category: '', performanceDetails: '', specialRequirements: '', customFields: {} });
+    const [saving, setSaving] = useState(false);
+    const set = (k: keyof Registration, v: any) => setForm(f => ({ ...f, [k]: v }));
+    const setCustom = (key: string, val: string) => setForm(f => ({ ...f, customFields: { ...(f.customFields || {}), [key]: val } }));
+
+    const regEvent = events.find(e => e.id === eventId);
+    const STANDARD = new Set(['fullName', 'name', 'email', 'phone', 'phoneNumber', 'address', 'numberOfTickets', 'adults', 'kidsAbove6', 'kidsBelow6', 'numberOfParticipants', 'category', 'performanceDetails', 'specialRequirements']);
+    const eventForm = type === 'attendee' ? (regEvent?.attendeeForm || []) : (regEvent?.participantForm || []);
+    const customFormFields = eventForm.filter(f => f.name && !STANDARD.has(f.name));
+    const categoryField = regEvent?.participantForm?.find(f => f.name === 'category') || regEvent?.participantForm?.find(f => f.type === 'select' && f.label?.toLowerCase().includes('category'));
+
+    const handleSave = async () => {
+      if (!form.name || !eventId) return;
+      setSaving(true);
+      try {
+        const newReg = await createRegistration({
+          eventId, type,
+          name: form.name || '', email: form.email || '', phone: form.phone || '', address: form.address || '',
+          numberOfTickets: form.numberOfTickets || 0, adults: form.adults || 0,
+          kidsAbove6: form.kidsAbove6 || 0, kidsBelow6: form.kidsBelow6 || 0,
+          numberOfParticipants: form.numberOfParticipants || 0, category: form.category || '',
+          performanceDetails: form.performanceDetails || '', specialRequirements: form.specialRequirements || '',
+          customFields: form.customFields || {}, registrationDate: new Date().toISOString(),
+        });
+        setRegistrations(prev => [newReg, ...prev]);
+        setAddingRegistration(null);
+        showToast('Registration added');
+      } catch { showToast('Failed to add registration', 'error'); }
+      setSaving(false);
+    };
+
+    const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent';
+    const stdField = (label: string, k: keyof Registration, inputType = 'text') => (
+      <div key={String(k)}>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+        <input type={inputType} value={(form[k] as any) ?? ''} onChange={e => set(k, inputType === 'number' ? Number(e.target.value) : e.target.value)} className={inputCls} />
+      </div>
+    );
+
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b">
+            <h2 className="text-lg font-bold text-gray-900">Add Registration</h2>
+            <button onClick={() => setAddingRegistration(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="overflow-y-auto p-6 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Event</label>
+              <select value={eventId} onChange={e => setEventId(e.target.value)} className={inputCls + ' bg-gray-50'}>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Registration Type</label>
+              <select value={type} onChange={e => setType(e.target.value as 'attendee' | 'participant')} className={inputCls + ' bg-gray-50'}>
+                <option value="attendee">Attendee</option>
+                <option value="participant">Participant</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {stdField('Full Name', 'name')}
+              {stdField('Email', 'email', 'email')}
+              {stdField('Phone', 'phone')}
+              {stdField('Address', 'address')}
+              {type === 'attendee' ? (<>
+                {stdField('# Tickets', 'numberOfTickets', 'number')}
+                {stdField('Adults', 'adults', 'number')}
+                {stdField('Kids (above 6)', 'kidsAbove6', 'number')}
+                {stdField('Kids (below 6)', 'kidsBelow6', 'number')}
+              </>) : (<>
+                {stdField('# Participants', 'numberOfParticipants', 'number')}
+                {stdField('Adults', 'adults', 'number')}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                  {(() => {
+                    const base = categoryField?.type === 'select' && (categoryField.options || []).length > 0 ? categoryField.options! : ['Music', 'Dance', 'Drama', 'Poetry', 'Other'];
+                    return (
+                      <select value={form.category || ''} onChange={e => set('category', e.target.value)} className={inputCls + ' bg-gray-50'}>
+                        <option value="">Select category...</option>
+                        {base.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    );
+                  })()}
+                </div>
+              </>)}
+              {customFormFields.map(f => {
+                const val = form.customFields?.[f.name] || '';
+                if (f.type === 'select') return (
+                  <div key={f.id}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+                    <select value={val} onChange={e => setCustom(f.name, e.target.value)} className={inputCls + ' bg-gray-50'}>
+                      <option value="">Select...</option>
+                      {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                );
+                return (
+                  <div key={f.id}>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+                    <input type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : 'text'} value={val} onChange={e => setCustom(f.name, e.target.value)} className={inputCls} />
+                  </div>
+                );
+              })}
+            </div>
+            {type === 'participant' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Performance Details</label>
+                <textarea rows={2} value={form.performanceDetails || ''} onChange={e => set('performanceDetails', e.target.value)} className={inputCls + ' resize-none'} />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Special Requirements</label>
+              <textarea rows={2} value={form.specialRequirements || ''} onChange={e => set('specialRequirements', e.target.value)} className={inputCls + ' resize-none'} />
+            </div>
+          </div>
+          <div className="flex space-x-3 px-6 py-4 border-t bg-gray-50 rounded-b-2xl">
+            <button onClick={handleSave} disabled={saving || !form.name}
+              className="flex-1 bg-primary-600 text-white px-4 py-2.5 rounded-xl hover:bg-primary-700 font-semibold text-sm flex items-center justify-center disabled:opacity-60">
+              {saving && <Loader className="w-4 h-4 mr-2 animate-spin" />}<Plus className="w-4 h-4 mr-2" />Add Registration
+            </button>
+            <button onClick={() => setAddingRegistration(null)}
+              className="px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-100 text-sm">
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2125,6 +2915,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         </div>
       )}
 
+      {addingRegistration && <AddRegistrationModal />}
       {editingRegistration && <EditRegistrationModal />}
       {showEventModal && <EventModal />}
       {showSponsorModal && <SponsorModal />}
@@ -2139,6 +2930,24 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         />
       )}
       <SidePanel />
+
+      {selectedContact && (
+        <div className="fixed inset-0 z-40" onClick={() => setSelectedContact(null)}>
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="font-semibold text-gray-900">Contact Submission</h3>
+              <button onClick={() => setSelectedContact(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div><p className="text-xs text-gray-500 mb-1">Name</p><p className="font-medium">{selectedContact.name}</p></div>
+              <div><p className="text-xs text-gray-500 mb-1">Email</p><p>{selectedContact.email}</p></div>
+              <div><p className="text-xs text-gray-500 mb-1">Phone</p><p>{selectedContact.phone || 'N/A'}</p></div>
+              <div><p className="text-xs text-gray-500 mb-1">Date</p><p>{new Date(selectedContact.contactDate || selectedContact.contact_date).toLocaleString()}</p></div>
+              <div><p className="text-xs text-gray-500 mb-1">Message</p><p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedContact.message}</p></div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
